@@ -28,7 +28,7 @@ if __name__ == "__main__":
 
     print("Бот запущений...")
     app.run_polling()
-
+#fix
 
 
 
