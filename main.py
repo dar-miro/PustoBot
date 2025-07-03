@@ -4,6 +4,7 @@ from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, fil
 from PustoBot import start_command, handle_message, add_command
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
+from aiohttp import web
 
 # Налаштування Google Sheets
 scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
@@ -18,6 +19,9 @@ async def message_handler_wrapper(update: Update, context: ContextTypes.DEFAULT_
 async def add_command_wrapper(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await add_command(update, context, sheet)
 
+async def handle_ping(request):
+    return web.Response(text="I'm alive!")
+
 if __name__ == "__main__":
     TOKEN = os.getenv("TOKEN")  # токен беремо зі змінних оточення
 
@@ -28,17 +32,17 @@ if __name__ == "__main__":
     app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), message_handler_wrapper))
 
     # --- Налаштування webhook ---
-
-    # Шлях webhook (можеш змінити на свій)
     WEBHOOK_PATH = "/webhook"
     WEBHOOK_URL = os.getenv("WEBHOOK_URL") or "https://pustobot.onrender.com" + WEBHOOK_PATH
     PORT = int(os.environ.get("PORT", "8443"))  # Render дає порт у змінній оточення PORT
 
-    print(f"Starting webhook on port {PORT} with URL {WEBHOOK_URL}")
+    # Додаємо маршрут для пінгу (щоб сервіс UptimeRobot міг перевіряти, що бот живий)
+    app.app.add_routes([web.get('/', handle_ping)])
 
+    print(f"Starting webhook on port {PORT} with URL {WEBHOOK_URL}")
     app.run_webhook(
         listen="0.0.0.0",
         port=PORT,
         url_path=WEBHOOK_PATH,
-        webhook_url=WEBHOOK_URL
+        webhook_url=WEBHOOK_URL,
     )
