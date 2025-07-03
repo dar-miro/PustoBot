@@ -10,7 +10,6 @@ def parse_message(text):
         return match.groups()
     return None
 
-# ✅ Єдина функція з логікою запису в таблицю
 async def process_input(update: Update, context: ContextTypes.DEFAULT_TYPE, sheet, text: str):
     result = parse_message(text)
     if result:
