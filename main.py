@@ -1,24 +1,25 @@
-from telegram.ext import ApplicationBuilder, MessageHandler, CommandHandler, filters
+import os
+from telegram import Update
+from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
+from PustoBot import start_command, handle_message, add_command
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
-from PustoBot import start_command, handle_message, start_command, handle_message, add_command
 
-# Google Sheets setup
+# Налаштування Google Sheets
 scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
 creds = ServiceAccountCredentials.from_json_keyfile_name("credentials.json", scope)
 client = gspread.authorize(creds)
-sheet = client.open("DataBase").sheet1  # замініть на назву вашої таблиці
+sheet = client.open("DataBase").sheet1  # замініть на назву таблиці
 
-async def message_handler_wrapper(update, context):
-    # Обгортка, щоб передати sheet у handle_message
-    await handle_message(update, context, sheet)
-async def message_handler_wrapper(update, context):
+# Обгортки, щоб передати sheet в обробники
+async def message_handler_wrapper(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await handle_message(update, context, sheet)
 
-async def add_command_wrapper(update, context):
+async def add_command_wrapper(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await add_command(update, context, sheet)
+
 if __name__ == "__main__":
-    TOKEN = "7392593867:AAHSNWTbZxS4BfEKJa3KG7SuhK2G9R5kKQA"  # Вкажи свій токен бота
+    TOKEN = os.getenv("TOKEN")  # токен беремо зі змінних оточення
 
     app = ApplicationBuilder().token(TOKEN).build()
 
@@ -26,9 +27,18 @@ if __name__ == "__main__":
     app.add_handler(CommandHandler("add", add_command_wrapper))
     app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), message_handler_wrapper))
 
-    print("Бот запущений...")
-    app.run_polling()
+    # --- Налаштування webhook ---
 
+    # Шлях webhook (можеш змінити на свій)
+    WEBHOOK_PATH = "/webhook"
+    WEBHOOK_URL = os.getenv("WEBHOOK_URL") or "https://pustobot.onrender.com" + WEBHOOK_PATH
+    PORT = int(os.environ.get("PORT", "8443"))  # Render дає порт у змінній оточення PORT
 
+    print(f"Starting webhook on port {PORT} with URL {WEBHOOK_URL}")
 
-
+    app.run_webhook(
+        listen="0.0.0.0",
+        port=PORT,
+        url_path=WEBHOOK_PATH,
+        webhook_url=WEBHOOK_URL
+    )

@@ -27,14 +27,13 @@ async def process_input(update: Update, context: ContextTypes.DEFAULT_TYPE, shee
     else:
         await update.message.reply_text("⚠️ Невірний формат. Використай: Назва Розділ Позиція (тип)")
 
-# 🔹 /start
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "Привіт! Надішли мені:\n"
         "Назва Розділ Позиція (клін/тайп/переклад/редакт)\n"
-        "або скористайся командою /add у такому ж форматі.")
+        "або скористайся командою /add у такому ж форматі."
+    )
 
-# 🔹 Обробка звичайного повідомлення з тегом бота
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE, sheet):
     message = update.message
     if not message or not message.text:
@@ -44,11 +43,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE, she
     if bot_username in message.text.lower():
         await process_input(update, context, sheet, message.text)
 
-# 🔹 Обробка /add
 async def add_command(update: Update, context: ContextTypes.DEFAULT_TYPE, sheet):
     message = update.message
     if not message or not message.text:
         return
-
     text = message.text[len("/add "):].strip()
     await process_input(update, context, sheet, text)
