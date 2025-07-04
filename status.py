@@ -45,7 +45,7 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE, she
             chapters[chapter][role] = user
 
     # Формування відповіді
-    lines = [parts[0]]
+    lines = [f"<b>{parts[0]}</b>"]
     for chapter in sorted(chapters.keys(), key=lambda x: float(x.replace(',', '.'))):
         chapter_val = float(chapter.replace(',', '.'))
         if range_filter:
@@ -53,10 +53,12 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE, she
                 continue
         roles_data = chapters[chapter]
         all_done = all(role in roles_data for role in ROLES)
-        lines.append(f"\n{chapter} - {'опубліковано' if all_done else 'в роботі'}")
+        lines.append(f"\n<b>{chapter} - {'опубліковано' if all_done else 'в роботі'}</b>")
         for role in ROLES:
-            user = roles_data.get(role, "❌")
-            status = "✅" if user != "❌" else "❌"
-            lines.append(f"{role.lower()} {user} {status}".strip())
+            user = roles_data.get(role)
+            if user:
+                lines.append(f"{role.lower()} {user} ✅")
+            else:
+                lines.append(f"{role.lower()} ❌")
 
-    await update.message.reply_text("\n".join(lines))
+    await update.message.reply_text("\n".join(lines), parse_mode="HTML")
