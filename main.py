@@ -7,7 +7,7 @@ from PustoBot import start_command, handle_message, add_command
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 from status import status_command
-
+from publish import publish_command
 # Google Sheets setup
 scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
 creds = ServiceAccountCredentials.from_json_keyfile_name("credentials.json", scope)
@@ -43,6 +43,7 @@ async def main():
     bot_app.add_handler(CommandHandler("add", add_command_wrapper))
     bot_app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), message_handler_wrapper))
     bot_app.add_handler(CommandHandler("status", lambda u, c: status_command(u, c, sheet)))
+    bot_app.add_handler(CommandHandler("publish", lambda u, c: publish_command(u, c, sheet)))
 
     await bot_app.initialize()
     await bot_app.start()
