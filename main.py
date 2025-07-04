@@ -1,4 +1,5 @@
 import os
+import asyncio
 from aiohttp import web
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
@@ -19,11 +20,11 @@ async def message_handler_wrapper(update: Update, context: ContextTypes.DEFAULT_
 async def add_command_wrapper(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await add_command(update, context, sheet)
 
+# Обробка запитів від Telegram
 async def handle_ping(request):
     return web.Response(text="I'm alive!")
 
 async def handle_webhook(request):
-    # Отримуємо json і передаємо у telegram бот
     app = request.app['bot_app']
     update = await request.json()
     print("📨 Отримано update від Telegram:", update)
@@ -31,16 +32,20 @@ async def handle_webhook(request):
     await app.update_queue.put(telegram_update)
     return web.Response(text='OK')
 
-if __name__ == "__main__":
+# Основна асинхронна функція
+async def main():
     TOKEN = os.getenv("TOKEN")
 
-    # Створюємо Application telegram бота без запуску polling/webhook
+    # Створення Telegram application
     bot_app = ApplicationBuilder().token(TOKEN).build()
     bot_app.add_handler(CommandHandler("start", start_command))
     bot_app.add_handler(CommandHandler("add", add_command_wrapper))
     bot_app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), message_handler_wrapper))
 
-    # Створюємо aiohttp вебсервер
+    await bot_app.initialize()
+    await bot_app.start()
+
+    # Вебсервер aiohttp
     aio_app = web.Application()
     aio_app['bot_app'] = bot_app
     aio_app.add_routes([
@@ -49,10 +54,14 @@ if __name__ == "__main__":
     ])
 
     PORT = int(os.environ.get("PORT", "8443"))
-    print(f"Starting server on port {PORT}")
+    runner = web.AppRunner(aio_app)
+    await runner.setup()
+    site = web.TCPSite(runner, '0.0.0.0', PORT)
+    await site.start()
 
-    # Запускаємо telegram bot без власного webhook (ми зробили свій через aiohttp)
-    bot_app.start()
+    print(f"✅ Server started on port {PORT}")
+    await bot_app.running.wait()  # Бот працює, поки не буде зупинений вручну
 
-    # Запускаємо aiohttp сервер
-    web.run_app(aio_app, host='0.0.0.0', port=PORT)
+# Запуск
+if __name__ == "__main__":
+    asyncio.run(main())
