@@ -2,16 +2,33 @@ from telegram import Update
 from telegram.ext import ContextTypes
 import re
 from datetime import datetime
+import json
 
-def parse_message(text):
-    pattern = r"(\S+)\s+(\S+)\s+(\S+)\s+\((клін|тайп|переклад|редакт)\)"
-    match = re.search(pattern, text, re.IGNORECASE)
-    if match:
-        return match.groups()
-    return None
+with open("nicknames.json", "r", encoding="utf-8") as f:
+    nickname_map = json.load(f)
+def parse_message(text, thread_title=None):
+    parts = text.strip().split()
+
+    if len(parts) < 2:
+        return None  # мінімум розділ і позиція
+
+    if len(parts) == 2:
+        chapter, position = parts
+        nickname = None
+        title = thread_title or "БезНазви"
+    elif len(parts) == 3:
+        chapter, position, nickname = parts
+        title = thread_title or "БезНазви"
+    else:
+        title, chapter, position = parts[:3]
+        nickname = parts[3] if len(parts) > 3 else None
+
+    return title, chapter, position, nickname
 
 async def process_input(update: Update, context: ContextTypes.DEFAULT_TYPE, sheet, text: str):
     result = parse_message(text)
+    nickname = nickname or update.message.from_user.full_name
+    nickname = nickname_map.get(nickname, nickname)
     if result:
         title, chapter, position, work_type = result
         row = [
