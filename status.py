@@ -1,57 +1,62 @@
 from telegram import Update
 from telegram.ext import ContextTypes
 from collections import defaultdict
+import re
 
-ROLES = ["клін", "переклад", "тайп", "редакт"]
+ROLES = ["Клін", "Переклад", "Тайп", "Редакт"]
 
+# === Команда /status ===
 async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE, sheet):
     message = update.message
     if not message or not message.text:
         return
 
     args = message.text.strip().split(maxsplit=1)
-    if len(args) != 2:
-        await update.message.reply_text("⚠️ Використання: /status Назва_Тайтлу")
+    if len(args) < 2:
+        await update.message.reply_text("⚠️ Використання: /status Назва_Тайтлу або /status Назва_Тайтлу 30-34")
         return
 
-    title = args[1].strip().lower()
-    all_rows = sheet.get_all_values()[1:]  # Пропускаємо заголовок
+    parts = args[1].strip().split()
+    title = parts[0].strip().lower()
+    range_filter = None
 
-    # Зберігаємо дані у вигляді: {розділ: {роль: нік}}
-    chapters = defaultdict(dict)
-    for row in all_rows:
-        if len(row) < 6:
-            continue
-        if row[2].strip().lower() != title:
-            continue
+    if len(parts) > 1:
+        range_match = re.match(r"(\d+[.,]?\d*)-(\d+[.,]?\d*)", parts[1])
+        if range_match:
+            start = float(range_match.group(1).replace(",", "."))
+            end = float(range_match.group(2).replace(",", "."))
+            range_filter = (start, end)
 
-        chapter = row[3].strip()
-        role = row[4].strip().lower()
-        user = row[5].strip()
-        if role in ROLES:
-            chapters[chapter][role] = user
+    data = sheet.get_all_values()[1:]  # Пропускаємо заголовок
 
-    if not chapters:
+    # Відфільтрувати дані за тайтлом
+    filtered = [row for row in data if len(row) >= 6 and row[2].strip().lower() == title]
+    if not filtered:
         await update.message.reply_text("⛔ Нічого не знайдено по цьому тайтлу.")
         return
 
-    # Формування відповіді
-    header = "       | " + " || ".join([f"{r.capitalize():<9}" for r in ROLES]) + " || Статус\n"
-    lines = [args[1], header]
+    # Групувати по розділах
+    chapters = defaultdict(lambda: defaultdict(str))
+    for row in filtered:
+        chapter = row[3].strip()
+        role = row[4].strip().capitalize()
+        user = row[5].strip()
+        if role.lower() in [r.lower() for r in ROLES]:
+            chapters[chapter][role] = user
 
-    for ch in sorted(chapters.keys(), key=lambda x: float(x.replace(",", "."))):
-        row = f"{ch:<7}| "
-        role_statuses = []
-        all_done = True
+    # Формування відповіді
+    lines = [parts[0]]
+    for chapter in sorted(chapters.keys(), key=lambda x: float(x.replace(',', '.'))):
+        chapter_val = float(chapter.replace(',', '.'))
+        if range_filter:
+            if not (range_filter[0] <= chapter_val <= range_filter[1]):
+                continue
+        roles_data = chapters[chapter]
+        all_done = all(role in roles_data for role in ROLES)
+        lines.append(f"\n{chapter} - {'опубліковано' if all_done else 'в роботі'}")
         for role in ROLES:
-            user = chapters[ch].get(role)
-            if user:
-                role_statuses.append(f"{user} ✅")
-            else:
-                role_statuses.append("❌")
-                all_done = False
-        row += " || ".join([f"{r:<9}" for r in role_statuses])
-        row += f" || {'опубліковано' if all_done else ''}"
-        lines.append(row)
+            user = roles_data.get(role, "❌")
+            status = "✅" if user != "❌" else "❌"
+            lines.append(f"{role.lower()} {user} {status}".strip())
 
     await update.message.reply_text("\n".join(lines))
