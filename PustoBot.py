@@ -47,14 +47,12 @@ def parse_message(text, thread_title=None):
 async def process_input(update: Update, context: ContextTypes.DEFAULT_TYPE, sheet, text: str, thread_title=None):
     result = parse_message(text, thread_title)
     if not result:
-        await update.message.reply_text("⚠️ Невірний формат. Використай: Назва Розділ Позиція Нік")
+        await update.message.reply_text("⚠️ Невірний формат. Спробуй знову.")
         return
 
     title, chapter, position, nickname = result
-
     if not nickname:
         nickname = update.message.from_user.full_name
-
     nickname = nickname_map.get(nickname, nickname)
 
     row = [
@@ -84,8 +82,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE, she
 
     bot_username = context.bot.username.lower()
     if bot_username in message.text.lower():
-        thread_title = message.message_thread_topic if message.is_topic_message else None
-        await process_input(update, context, sheet, message.text, thread_title)
+        # Отримуємо назву теми (гілки) якщо є
+        thread_title = message.message_thread_title if hasattr(message, 'message_thread_title') else None
+        await process_input(update, context, sheet, message.text, thread_title=thread_title)
+
 
 # === Команда /add ===
 async def add_command(update: Update, context: ContextTypes.DEFAULT_TYPE, sheet):
