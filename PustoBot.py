@@ -89,7 +89,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE, she
 
     bot_username = context.bot.username.lower()
     if bot_username in message.text.lower():
-        thread_title = getattr(message, 'message_thread_title', None)
+        thread_title = getattr(message, "message_thread_title", None) or getattr(message, "message_thread_topic", None)
         await process_input(update, context, sheet, message.text, thread_title=thread_title, bot_username=context.bot.username)
 
 # === Команда /add ===
@@ -98,7 +98,7 @@ async def add_command(update: Update, context: ContextTypes.DEFAULT_TYPE, sheet)
     if not message or not message.text:
         return
     text = message.text[len("/add "):].strip()
-    thread_title = getattr(message, 'message_thread_title', None)
+    thread_title = getattr(message, "message_thread_title", None) or getattr(message, "message_thread_topic", None)
     await process_input(update, context, sheet, text, thread_title=thread_title, bot_username=context.bot.username)
 
 # === Обгортки ===
