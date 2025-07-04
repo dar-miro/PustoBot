@@ -25,12 +25,12 @@ async def publish_command(update: Update, context: ContextTypes.DEFAULT_TYPE, sh
     data = rows[1:]
 
     title_idx = headers.index("Тайтл")
-    chapter_idx = headers.index("Розділ")
-    role_idx = headers.index("Роль")
+    chapter_idx = headers.index("№ розділу")
+    role_idx = headers.index("Позиція")
     nick_idx = headers.index("Користувач")
     status_idx = headers.index("Статус") if "Статус" in headers else -1
     date_idx = headers.index("Дата") if "Дата" in headers else -1
-    tg_idx = headers.index("Telegram-нік") if "Telegram-нік" in headers else -1
+    tg_idx = headers.index("Нік") if "Нік" in headers else -1
 
     updated_rows = 0
 
