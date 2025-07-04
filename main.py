@@ -26,6 +26,7 @@ async def handle_webhook(request):
     # Отримуємо json і передаємо у telegram бот
     app = request.app['bot_app']
     update = await request.json()
+    print("📨 Отримано update від Telegram:", update)
     telegram_update = Update.de_json(update, app.bot)
     await app.update_queue.put(telegram_update)
     return web.Response(text='OK')
