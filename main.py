@@ -60,7 +60,9 @@ async def main():
     await site.start()
 
     print(f"✅ Server started on port {PORT}")
-    await bot_app.running.wait()  # Бот працює, поки не буде зупинений вручну
+    while True:
+        await asyncio.sleep(3600)  # тримай сервер живим
+
 
 # Запуск
 if __name__ == "__main__":

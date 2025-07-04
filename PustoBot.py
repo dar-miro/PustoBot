@@ -1,3 +1,5 @@
+# === Файл: main.py ===
+
 import os
 import json
 from datetime import datetime
@@ -13,11 +15,11 @@ from telegram.ext import (
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 
-# Завантаження словника ніків
+# === Завантаження словника ніків ===
 with open("nicknames.json", "r", encoding="utf-8") as f:
     nickname_map = json.load(f)
 
-# Google Sheets setup
+# === Налаштування Google Sheets ===
 scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
 creds = ServiceAccountCredentials.from_json_keyfile_name("credentials.json", scope)
 client = gspread.authorize(creds)
@@ -27,21 +29,17 @@ sheet = client.open("DataBase").sheet1
 def parse_message(text, thread_title=None, bot_username=None):
     parts = text.strip().split()
 
-    # Якщо перше слово — тег бота (@PustoBot), ігноруємо його
     if bot_username and parts and parts[0].lower() == f"@{bot_username.lower()}":
         parts = parts[1:]
 
     if len(parts) == 2 and thread_title:
-        # розділ, позиція
         chapter, position = parts
         nickname = None
         title = thread_title
     elif len(parts) == 3 and thread_title:
-        # розділ, позиція, нік
         chapter, position, nickname = parts
         title = thread_title
     elif len(parts) == 3:
-        # тайтл, розділ, позиція
         title, chapter, position = parts
         nickname = None
     elif len(parts) >= 4:
@@ -52,7 +50,7 @@ def parse_message(text, thread_title=None, bot_username=None):
 
     return title, chapter, position, nickname
 
-# === Обробка повідомлення ===
+# === Обробка одного повідомлення ===
 async def process_input(update: Update, context: ContextTypes.DEFAULT_TYPE, sheet, text: str, thread_title=None, bot_username=None):
     result = parse_message(text, thread_title=thread_title, bot_username=bot_username)
     if not result:
@@ -75,7 +73,6 @@ async def process_input(update: Update, context: ContextTypes.DEFAULT_TYPE, shee
     sheet.append_row(row)
     await update.message.reply_text("✅ Дані додано до таблиці.")
 
-
 # === Команда /start ===
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
@@ -92,11 +89,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE, she
 
     bot_username = context.bot.username.lower()
     if bot_username in message.text.lower():
-        # Отримуємо назву теми (гілки) якщо є
-        thread_title = message.message_thread_title if hasattr(message, 'message_thread_title') else None
+        thread_title = getattr(message, 'message_thread_title', None)
         await process_input(update, context, sheet, message.text, thread_title=thread_title, bot_username=context.bot.username)
-
-
 
 # === Команда /add ===
 async def add_command(update: Update, context: ContextTypes.DEFAULT_TYPE, sheet):
@@ -104,11 +98,10 @@ async def add_command(update: Update, context: ContextTypes.DEFAULT_TYPE, sheet)
     if not message or not message.text:
         return
     text = message.text[len("/add "):].strip()
-    thread_title = message.message_thread_topic if message.is_topic_message else None
-    await process_input(update, context, sheet, message.text, thread_title=thread_title, bot_username=context.bot.username)
+    thread_title = getattr(message, 'message_thread_title', None)
+    await process_input(update, context, sheet, text, thread_title=thread_title, bot_username=context.bot.username)
 
-
-# === Обгортки для передачі sheet ===
+# === Обгортки ===
 async def message_handler_wrapper(update, context):
     await handle_message(update, context, sheet)
 
@@ -125,7 +118,7 @@ async def handle_webhook(request):
     await app.update_queue.put(telegram_update)
     return web.Response(text='OK')
 
-# === Запуск бота та aiohttp-сервера ===
+# === Запуск бота ===
 if __name__ == "__main__":
     TOKEN = os.getenv("TOKEN")
 
@@ -144,7 +137,6 @@ if __name__ == "__main__":
     PORT = int(os.environ.get("PORT", "8443"))
     print(f"🌐 Server running on port {PORT}...")
 
-    # Запуск
     bot_app.initialize()
     bot_app.start()
     web.run_app(aio_app, host="0.0.0.0", port=PORT)
