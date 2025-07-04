@@ -24,30 +24,39 @@ client = gspread.authorize(creds)
 sheet = client.open("DataBase").sheet1
 
 # === Парсинг повідомлення ===
-def parse_message(text, thread_title=None):
+def parse_message(text, thread_title=None, bot_username=None):
     parts = text.strip().split()
 
-    if len(parts) < 2:
-        return None
+    # Якщо перше слово — тег бота (@PustoBot), ігноруємо його
+    if bot_username and parts and parts[0].lower() == f"@{bot_username.lower()}":
+        parts = parts[1:]
 
-    if len(parts) == 2:
+    if len(parts) == 2 and thread_title:
+        # розділ, позиція
         chapter, position = parts
         nickname = None
-        title = thread_title or "БезНазви"
-    elif len(parts) == 3:
+        title = thread_title
+    elif len(parts) == 3 and thread_title:
+        # розділ, позиція, нік
         chapter, position, nickname = parts
-        title = thread_title or "БезНазви"
-    else:
+        title = thread_title
+    elif len(parts) == 3:
+        # тайтл, розділ, позиція
+        title, chapter, position = parts
+        nickname = None
+    elif len(parts) >= 4:
         title, chapter, position = parts[:3]
-        nickname = parts[3] if len(parts) > 3 else None
+        nickname = parts[3]
+    else:
+        return None
 
     return title, chapter, position, nickname
 
 # === Обробка повідомлення ===
-async def process_input(update: Update, context: ContextTypes.DEFAULT_TYPE, sheet, text: str, thread_title=None):
-    result = parse_message(text, thread_title)
+async def process_input(update: Update, context: ContextTypes.DEFAULT_TYPE, sheet, text: str, thread_title=None, bot_username=None):
+    result = parse_message(text, thread_title=thread_title, bot_username=bot_username)
     if not result:
-        await update.message.reply_text("⚠️ Невірний формат. Спробуй знову.")
+        await update.message.reply_text("⚠️ Невірний формат. Спробуй ще раз.")
         return
 
     title, chapter, position, nickname = result
@@ -65,6 +74,7 @@ async def process_input(update: Update, context: ContextTypes.DEFAULT_TYPE, shee
     ]
     sheet.append_row(row)
     await update.message.reply_text("✅ Дані додано до таблиці.")
+
 
 # === Команда /start ===
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -84,7 +94,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE, she
     if bot_username in message.text.lower():
         # Отримуємо назву теми (гілки) якщо є
         thread_title = message.message_thread_title if hasattr(message, 'message_thread_title') else None
-        await process_input(update, context, sheet, message.text, thread_title=thread_title)
+        await process_input(update, context, sheet, message.text, thread_title=thread_title, bot_username=context.bot.username)
+
 
 
 # === Команда /add ===
@@ -94,7 +105,8 @@ async def add_command(update: Update, context: ContextTypes.DEFAULT_TYPE, sheet)
         return
     text = message.text[len("/add "):].strip()
     thread_title = message.message_thread_topic if message.is_topic_message else None
-    await process_input(update, context, sheet, text, thread_title)
+    await process_input(update, context, sheet, message.text, thread_title=thread_title, bot_username=context.bot.username)
+
 
 # === Обгортки для передачі sheet ===
 async def message_handler_wrapper(update, context):
