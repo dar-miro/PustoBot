@@ -1,7 +1,7 @@
 from telegram import Update
 from telegram.ext import ContextTypes
 from datetime import datetime
-from PustoBot import load_nickname_map  # Імпортуємо з PustoBot
+from PustoBot.sheets import load_nickname_map  # Імпортуємо з PustoBot
 import gspread
 
 ROLES = ["Клін", "Переклад", "Тайп", "Редакт"]
