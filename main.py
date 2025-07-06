@@ -1,13 +1,14 @@
 import os
 import asyncio
+import gspread
 from aiohttp import web
 from telegram import Update
-from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
+from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes, ConversationHandler
 from PustoBot import start_command, handle_message, add_command
-import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 from status import status_command
 from publish import publish_command
+from register import get_register_handler
 
 # Google Sheets setup
 scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
@@ -45,6 +46,8 @@ async def main():
     bot_app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), message_handler_wrapper))
     bot_app.add_handler(CommandHandler("status", lambda u, c: status_command(u, c, sheet)))
     bot_app.add_handler(CommandHandler("publish", lambda u, c: publish_command(u, c, sheet)))
+    bot_app.add_handler(get_register_handler(sheet))
+
 
     await bot_app.initialize()
     await bot_app.start()
@@ -66,7 +69,6 @@ async def main():
     print(f"✅ Server started on port {PORT}")
     while True:
         await asyncio.sleep(3600)  # тримай сервер живим
-
 
 # Запуск
 if __name__ == "__main__":
