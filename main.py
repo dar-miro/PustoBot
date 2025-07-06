@@ -8,6 +8,7 @@ import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 from status import status_command
 from publish import publish_command
+
 # Google Sheets setup
 scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
 creds = ServiceAccountCredentials.from_json_keyfile_name("credentials.json", scope)
