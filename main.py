@@ -1,27 +1,21 @@
 import os
 import asyncio
-import gspread
 from aiohttp import web
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
-from PustoBot import start_command, handle_message, add_command
-from oauth2client.service_account import ServiceAccountCredentials
-from status import status_command
-from publish import publish_command
+from PustoBot.handlers import start_command, handle_message, add_command
 from register import get_register_handler
+from publish import publish_command
+from status import status_command
+from PustoBot.sheets import get_main_sheet
 
-# Google Sheets setup
-scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
-creds = ServiceAccountCredentials.from_json_keyfile_name("credentials.json", scope)
-client = gspread.authorize(creds)
-sheet = client.open("DataBase").sheet1
+sheet = get_main_sheet()
 
-# Обгортки
 async def message_handler_wrapper(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await handle_message(update, context, sheet)
+    await handle_message(update, context)
 
 async def add_command_wrapper(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await add_command(update, context, sheet)
+    await add_command(update, context)
 
 async def handle_ping(request):
     return web.Response(text="I'm alive!")
@@ -33,16 +27,15 @@ async def handle_webhook(request):
     await app.update_queue.put(telegram_update)
     return web.Response(text='OK')
 
-# Основна функція
 async def main():
     TOKEN = os.getenv("TOKEN")
-
     bot_app = ApplicationBuilder().token(TOKEN).build()
-    bot_app.add_handler(get_register_handler(sheet))
+
     bot_app.add_handler(CommandHandler("start", start_command))
     bot_app.add_handler(CommandHandler("add", add_command_wrapper))
     bot_app.add_handler(CommandHandler("status", lambda u, c: status_command(u, c, sheet)))
     bot_app.add_handler(CommandHandler("publish", lambda u, c: publish_command(u, c, sheet)))
+    bot_app.add_handler(get_register_handler(sheet))
     bot_app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), message_handler_wrapper))
 
     await bot_app.initialize()

@@ -28,15 +28,10 @@ async def start_register(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # Запитати ролі
 async def ask_roles(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    nickname = update.message.text.strip()
-    context.user_data["nickname"] = nickname
-    print("DEBUG: ask_roles викликано, nickname =", nickname)  # лог на сервер
-    await update.message.reply_text("DEBUG: отримано нік, питаю ролі")  # лог у Telegram
-
-    keyboard = [[role] for role in ROLES_LIST]
+    context.user_data["nickname"] = update.message.text.strip()
     await update.message.reply_text(
-        "🛠 Обери ролі (через кому, наприклад: Клінер, Тайпер):",
-        reply_markup=ReplyKeyboardMarkup(keyboard, one_time_keyboard=True, resize_keyboard=True)
+        "🛠 Введи ролі вручну через кому (наприклад: Клінер, Тайпер).\n"
+        "Можливі ролі: Клінер, Перекладач, Тайпер, Редактор"
     )
     return ASK_ROLES
 
