@@ -2,13 +2,12 @@ import os
 import gspread
 from datetime import datetime
 from aiohttp import web
-from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove
+from telegram import Update
 from telegram.ext import (
     ApplicationBuilder,
     CommandHandler,
     MessageHandler,
     ContextTypes,
-    ConversationHandler,
     filters,
 )
 from oauth2client.service_account import ServiceAccountCredentials
@@ -28,15 +27,11 @@ def load_nickname_map(sheet):
     except:
         return {}
 
-nickname_map = load_nickname_map(sheet)
-
 # === Парсинг повідомлення ===
 def parse_message(text, thread_title=None, bot_username=None):
     parts = text.strip().split()
-
     if bot_username and parts and parts[0].lower() == f"@{bot_username.lower()}":
         parts = parts[1:]
-
     if len(parts) == 2 and thread_title:
         chapter, position = parts
         nickname = None
@@ -52,7 +47,6 @@ def parse_message(text, thread_title=None, bot_username=None):
         nickname = parts[3]
     else:
         return None
-
     return title, chapter, position, nickname
 
 # === Обробка одного повідомлення ===
@@ -65,6 +59,9 @@ async def process_input(update: Update, context: ContextTypes.DEFAULT_TYPE, shee
     title, chapter, position, nickname = result
     if not nickname:
         nickname = update.message.from_user.full_name
+
+    # Динамічно оновлюємо нікнейм мапу
+    nickname_map = load_nickname_map(sheet)
     nickname = nickname_map.get(nickname, nickname)
 
     row = [
@@ -120,79 +117,3 @@ async def handle_webhook(request):
     telegram_update = Update.de_json(update, app.bot)
     await app.update_queue.put(telegram_update)
     return web.Response(text='OK')
-
-# === Реєстрація користувача ===
-ASK_NICKNAME, ASK_ROLES = range(2)
-ROLES_LIST = ["Клінер", "Перекладач", "Тайпер", "Редактор"]
-
-def get_user_sheet(sheet):
-    try:
-        return sheet.spreadsheet.worksheet("Користувачі")
-    except:
-        return sheet.spreadsheet.add_worksheet("Користувачі", rows=100, cols=3)
-
-async def start_register(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("👤 Введи бажаний нік (наприклад: darmiro):")
-    return ASK_NICKNAME
-
-async def ask_roles(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    context.user_data["nickname"] = update.message.text.strip()
-    keyboard = [[role] for role in ROLES_LIST]
-    await update.message.reply_text(
-        "🛠 Обери ролі (через кому, наприклад: Клінер, Тайпер):",
-        reply_markup=ReplyKeyboardMarkup(keyboard, one_time_keyboard=True, resize_keyboard=True)
-    )
-    return ASK_ROLES
-
-async def finish_register(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    roles = update.message.text.strip()
-    nickname = context.user_data.get("nickname", "")
-    telegram_name = update.message.from_user.full_name
-
-    user_sheet = get_user_sheet(sheet)
-    headers = user_sheet.row_values(1)
-    if not headers:
-        user_sheet.insert_row(["Telegram-нік", "Нік", "Ролі"], index=1)
-
-    user_sheet.append_row([telegram_name, nickname, roles])
-
-    await update.message.reply_text("✅ Реєстрацію завершено!", reply_markup=ReplyKeyboardRemove())
-    return ConversationHandler.END
-
-async def cancel_register(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("❌ Реєстрацію скасовано.", reply_markup=ReplyKeyboardRemove())
-    return ConversationHandler.END
-
-register_conv = ConversationHandler(
-    entry_points=[CommandHandler("register", start_register)],
-    states={
-        ASK_NICKNAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, ask_roles)],
-        ASK_ROLES: [MessageHandler(filters.TEXT & ~filters.COMMAND, finish_register)]
-    },
-    fallbacks=[CommandHandler("cancel", cancel_register)],
-    allow_reentry=True
-)
-
-# === Запуск бота ===
-if __name__ == "__main__":
-    TOKEN = os.getenv("TOKEN")
-    bot_app = ApplicationBuilder().token(TOKEN).build()
-
-    bot_app.add_handler(CommandHandler("start", start_command))
-    bot_app.add_handler(CommandHandler("add", add_command_wrapper))
-    bot_app.add_handler(register_conv)
-    bot_app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), message_handler_wrapper))
-
-    aio_app = web.Application()
-    aio_app['bot_app'] = bot_app
-    aio_app.add_routes([
-        web.get("/", handle_ping),
-        web.post("/webhook", handle_webhook)
-    ])
-
-    PORT = int(os.environ.get("PORT", "8443"))
-    print(f"🌐 Server running on port {PORT}...")
-
-    bot_app.initialize()
-    bot_app.start()
-    web.run_app(aio_app, host="0.0.0.0", port=PORT)
