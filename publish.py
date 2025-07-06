@@ -1,13 +1,8 @@
 from telegram import Update
 from telegram.ext import ContextTypes
 from datetime import datetime
+from PustoBot import load_nickname_map  # Імпортуємо з PustoBot
 import gspread
-import json
-import os
-
-# === Завантаження ніків так само, як у PustoBot.py ===
-with open("nicknames.json", "r", encoding="utf-8") as f:
-    nickname_map = json.load(f)
 
 ROLES = ["Клін", "Переклад", "Тайп", "Редакт"]
 
@@ -24,7 +19,9 @@ async def publish_command(update: Update, context: ContextTypes.DEFAULT_TYPE, sh
     chapter = args[-1].strip()
     title = ' '.join(args[1:-1]).strip().lower()
 
+    # Отримуємо нік із таблиці "Користувачі"
     user_fullname = update.message.from_user.full_name
+    nickname_map = load_nickname_map(sheet)
     user_nickname = nickname_map.get(user_fullname, user_fullname)
     now = datetime.now().strftime("%Y-%m-%d %H:%M")
 
@@ -32,7 +29,6 @@ async def publish_command(update: Update, context: ContextTypes.DEFAULT_TYPE, sh
     headers = rows[0]
     data = rows[1:]
 
-    # Індекси колонок
     try:
         title_idx = headers.index("Тайтл")
         chapter_idx = headers.index("№ розділу")
@@ -47,7 +43,7 @@ async def publish_command(update: Update, context: ContextTypes.DEFAULT_TYPE, sh
 
     updated_rows = 0
 
-    # Оновлюємо наявні записи
+    # Оновлюємо статус для наявних рядків
     for i, row in enumerate(data):
         if len(row) < max(title_idx, chapter_idx, role_idx, nick_idx) + 1:
             continue
