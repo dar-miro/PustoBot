@@ -15,7 +15,7 @@ async def start_register(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("⚠️ Реєстрація доступна лише в особистих повідомленнях.")
         return ConversationHandler.END
     await update.message.reply_text("👤 Введи бажаний нік (наприклад: darmiro):")
-    return ASK_NICKNAME
+    return ASK_NICKNAME  # <- Повертаємо наступний стан
 
 async def ask_roles(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["nickname"] = update.message.text.strip()
@@ -24,7 +24,7 @@ async def ask_roles(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "🛠 Обери ролі (через кому, наприклад: Клінер, Тайпер):",
         reply_markup=ReplyKeyboardMarkup(keyboard, one_time_keyboard=True, resize_keyboard=True)
     )
-    return ASK_ROLES
+    return ASK_ROLES  # <- теж повертаємо
 
 async def finish_register(update: Update, context: ContextTypes.DEFAULT_TYPE, sheet):
     roles = update.message.text.strip()
@@ -39,7 +39,7 @@ async def finish_register(update: Update, context: ContextTypes.DEFAULT_TYPE, sh
     user_sheet.append_row([telegram_name, nickname, roles])
 
     await update.message.reply_text("✅ Реєстрацію завершено!", reply_markup=ReplyKeyboardRemove())
-    return ConversationHandler.END
+    return ConversationHandler.END  # <- повертаємо кінець розмови
 
 async def cancel_register(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("❌ Реєстрацію скасовано.", reply_markup=ReplyKeyboardRemove())
