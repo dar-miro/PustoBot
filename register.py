@@ -18,6 +18,7 @@ async def start_register(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return ASK_NICKNAME  # <- Повертаємо наступний стан
 
 async def ask_roles(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("DEBUG: отримано нік, питаю ролі")
     context.user_data["nickname"] = update.message.text.strip()
     keyboard = [[role] for role in ROLES_LIST]
     await update.message.reply_text(
