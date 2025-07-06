@@ -38,12 +38,12 @@ async def main():
     TOKEN = os.getenv("TOKEN")
 
     bot_app = ApplicationBuilder().token(TOKEN).build()
+    bot_app.add_handler(get_register_handler(sheet))
     bot_app.add_handler(CommandHandler("start", start_command))
     bot_app.add_handler(CommandHandler("add", add_command_wrapper))
-    bot_app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), message_handler_wrapper))
     bot_app.add_handler(CommandHandler("status", lambda u, c: status_command(u, c, sheet)))
     bot_app.add_handler(CommandHandler("publish", lambda u, c: publish_command(u, c, sheet)))
-    bot_app.add_handler(get_register_handler(sheet))
+    bot_app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), message_handler_wrapper))
 
     await bot_app.initialize()
     await bot_app.start()
