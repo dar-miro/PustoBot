@@ -2,15 +2,17 @@ import gspread
 from datetime import datetime
 from oauth2client.service_account import ServiceAccountCredentials
 
+# Авторизація
 scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
 creds = ServiceAccountCredentials.from_json_keyfile_name("credentials.json", scope)
 client = gspread.authorize(creds)
 
-# Аркуші
+# Основні аркуші
 main_spreadsheet = client.open("DataBase")
 log_sheet = main_spreadsheet.worksheet("Журнал")
 titles_sheet = main_spreadsheet.worksheet("Тайтли")
 
+# Відповідність ролей і колонок
 columns_by_role = {
     "Клінер": {"nick": "B", "date": "C", "check": "D"},
     "Перекладач": {"nick": "E", "date": "F", "check": "G"},
@@ -19,7 +21,7 @@ columns_by_role = {
 }
 
 def get_title_sheet():
-    return client.open("DataBase").worksheet("Тайтли")
+    return titles_sheet
 
 def get_user_sheet():
     try:
@@ -43,22 +45,39 @@ def append_log_row(full_name, title, chapter, position, nickname):
     ]
     log_sheet.append_row(row)
 
+# 🔍 Автоматичне виявлення блоків тайтлів
+def get_title_blocks():
+    data = titles_sheet.get_all_values()
+    blocks = []
+    current_title = None
+    start = None
+    for i, row in enumerate(data):
+        if row and row[0].strip() and not row[0].startswith("Розділ"):
+            current_title = row[0].strip()
+            start = i
+        elif not any(row) and current_title:
+            blocks.append((current_title, start, i))
+            current_title = None
+    if current_title:
+        blocks.append((current_title, start, len(data)))
+    return blocks
+
+# ✍️ Оновлення таблиці по знайденому блоку
 def update_title_table(title, chapter, role, nickname):
     role_columns = columns_by_role.get(role)
     if not role_columns:
         return False
 
-    all_data = titles_sheet.get_all_values()
-    title_found = False
-    for i, row in enumerate(all_data):
-        if row and row[0].strip() == title:
-            title_found = True
-            continue
-        if title_found and row and chapter in row[0]:
-            row_index = i + 1  # +1 бо нумерація з 1
-            now = datetime.now().strftime("%Y-%m-%d")
-            titles_sheet.update_acell(f"{role_columns['nick']}{row_index}", nickname)
-            titles_sheet.update_acell(f"{role_columns['date']}{row_index}", now)
-            titles_sheet.update_acell(f"{role_columns['check']}{row_index}", "✅")
-            return True
+    blocks = get_title_blocks()
+    for block_title, start_row, end_row in blocks:
+        if block_title.strip().lower() == title.strip().lower():
+            rows = titles_sheet.get_all_values()[start_row:end_row]
+            for i, row in enumerate(rows):
+                if row and chapter.strip() in row[0]:
+                    actual_row = start_row + i + 1
+                    now = datetime.now().strftime("%Y-%m-%d")
+                    titles_sheet.update_acell(f"{role_columns['nick']}{actual_row}", nickname)
+                    titles_sheet.update_acell(f"{role_columns['date']}{actual_row}", now)
+                    titles_sheet.update_acell(f"{role_columns['check']}{actual_row}", "✅")
+                    return True
     return False
