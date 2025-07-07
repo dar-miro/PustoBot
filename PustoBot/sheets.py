@@ -86,3 +86,14 @@ def update_title_table(title, chapter, role, nickname):
                     return True
     return False
 
+def set_main_roles(title, roles_map):
+    data = titles_sheet.get_all_values()
+    for i, row in enumerate(data):
+        if normalize_title(row[0]) == normalize_title(title):
+            for role, nick in roles_map.items():
+                col_info = columns_by_role.get(role.lower())
+                if col_info:
+                    titles_sheet.update_acell(f"{col_info['nick']}{i+1}", nick)
+            return True
+    return False
+

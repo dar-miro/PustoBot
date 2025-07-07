@@ -1,7 +1,8 @@
-from .sheets import load_nickname_map, append_log_row, update_title_table
+from .sheets import load_nickname_map, append_log_row, update_title_table, update_team_members
 from .core import parse_message
 from telegram import Update
 from telegram.ext import ContextTypes
+from thread_memory import set_thread_title, get_thread_title
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
@@ -28,23 +29,64 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE, she
         thread_title = getattr(message, "message_thread_title", None) or getattr(message, "message_thread_topic", None)
         await process_input(update, context, message.text, thread_title, bot_username)
 
+async def thread_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    msg = update.message
+    thread_id = msg.message_thread_id or msg.chat_id
+
+    await msg.reply_text("📝 Введи назву тайтлу для цієї гілки:")
     
-async def process_input(update, context, text, thread_title, bot_username):
+    def check_response(u): return u.message and u.message.reply_to_message == msg
+
+    # Очікуємо назву тайтлу
+    response = await context.application.wait_for_message(filters=None, timeout=60)
+    title = response.text.strip()
+
+    set_thread_title(thread_id, title)
+
+    await response.reply_text("✅ Тайтл збережено. Тепер введи основних учасників проєкту у форматі:\n"
+                              "`клін - darmiro, переклад - elena`, тощо.", parse_mode="Markdown")
+
+    members_msg = await context.application.wait_for_message(filters=None, timeout=120)
+    members_text = members_msg.text.lower()
+
+    roles_map = {}
+    for part in members_text.split(","):
+        if "-" in part:
+            role, nick = [p.strip() for p in part.split("-", 1)]
+            roles_map[role] = nick
+
+    from .sheets import normalize_title, set_main_roles
+    set_main_roles(title, roles_map)
+
+    await members_msg.reply_text("✅ Команду збережено.")
+   
+async def process_input(update, context, sheet, text, thread_title=None, bot_username=None):
+    from_user = update.message.from_user
+    thread_id = update.message.message_thread_id or update.message.chat_id
+
     result = parse_message(text, thread_title, bot_username)
     if not result:
-        await update.message.reply_text("⚠️ Невірний формат. Спробуй ще раз.")
-        return
+        title_from_thread = get_thread_title(thread_id)
+        if not title_from_thread:
+            await update.message.reply_text("⚠️ У цій гілці не вказано тайтл. Використай /thread.")
+            return
+        parts = text.strip().split()
+        if len(parts) < 2:
+            await update.message.reply_text("⚠️ Введи розділ і позицію.")
+            return
+        chapter, position = parts[:2]
+        nickname = parts[2] if len(parts) >= 3 else None
+        title = title_from_thread
+    else:
+        title, chapter, position, nickname = result
 
-    title, chapter, position, nickname = result
     if not nickname:
-        nickname = update.message.from_user.full_name
+        nickname = from_user.full_name
 
     nickname_map = load_nickname_map()
     nickname = nickname_map.get(nickname, nickname)
 
-    append_log_row(update.message.from_user.full_name, title, chapter, position, nickname)
-
-    # Якщо позиція збігається з відомою роллю — оновлюємо таблицю
+    append_log_row(from_user.full_name, title, chapter, position, nickname)
     success = update_title_table(title, chapter, position, nickname)
 
     if success:
