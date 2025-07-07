@@ -1,4 +1,4 @@
-from .sheets import load_nickname_map, append_log_row, update_title_table, update_team_members
+from .sheets import load_nickname_map, append_log_row, update_title_table, set_main_roles
 from .core import parse_message
 from telegram import Update
 from telegram.ext import ContextTypes
@@ -55,7 +55,6 @@ async def thread_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             role, nick = [p.strip() for p in part.split("-", 1)]
             roles_map[role] = nick
 
-    from .sheets import normalize_title, set_main_roles
     set_main_roles(title, roles_map)
 
     await members_msg.reply_text("✅ Команду збережено.")

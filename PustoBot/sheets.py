@@ -18,7 +18,8 @@ columns_by_role = {
     "клін": {"nick": "B", "date": "C", "check": "D"},
     "переклад": {"nick": "E", "date": "F", "check": "G"},
     "тайп": {"nick": "H", "date": "I", "check": "J"},
-    "ред" or "редакт": {"nick": "K", "date": "L", "check": "M"},
+    "ред": {"nick": "K", "date": "L", "check": "M"},
+    "редакт": {"nick": "K", "date": "L", "check": "M"},
 }
 
 def get_title_sheet():
