@@ -1,6 +1,7 @@
 import gspread
 from datetime import datetime
 from oauth2client.service_account import ServiceAccountCredentials
+import re
 
 # Авторизація
 scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
@@ -22,6 +23,9 @@ columns_by_role = {
 
 def get_title_sheet():
     return titles_sheet
+
+def normalize_title(t):
+    return re.sub(r'\s+', ' ', t.strip().lower().replace("’", "'"))
 
 def get_user_sheet():
     try:
@@ -70,7 +74,7 @@ def update_title_table(title, chapter, role, nickname):
 
     blocks = get_title_blocks()
     for block_title, start_row, end_row in blocks:
-        if block_title.strip().lower() == title.strip().lower():
+        if normalize_title(block_title) == normalize_title(title):
             rows = titles_sheet.get_all_values()[start_row:end_row]
             for i, row in enumerate(rows):
                 if row and chapter.strip() in row[0]:
@@ -81,3 +85,4 @@ def update_title_table(title, chapter, role, nickname):
                     titles_sheet.update_acell(f"{role_columns['check']}{actual_row}", "✅")
                     return True
     return False
+
