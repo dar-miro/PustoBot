@@ -12,10 +12,10 @@ from PustoBot.sheets import get_title_sheet
 sheet = get_title_sheet()
 
 async def message_handler_wrapper(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await handle_message(update, context)
+    await handle_message(update, context, sheet)
 
 async def add_command_wrapper(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await add_command(update, context)
+    await add_command(update, context, sheet)
 
 async def handle_ping(request):
     return web.Response(text="I'm alive!")
