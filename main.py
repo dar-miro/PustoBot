@@ -7,9 +7,9 @@ from PustoBot.handlers import start_command, handle_message, add_command
 from register import get_register_handler
 from publish import publish_command
 from status import status_command
-from PustoBot.sheets import get_main_sheet
+from PustoBot.sheets import get_title_sheet
 
-sheet = get_main_sheet()
+sheet = get_title_sheet()
 
 async def message_handler_wrapper(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await handle_message(update, context)
