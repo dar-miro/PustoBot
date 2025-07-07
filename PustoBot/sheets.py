@@ -18,7 +18,7 @@ columns_by_role = {
     "Редактор": {"nick": "K", "date": "L", "check": "M"},
 }
 
-def get_main_sheet():
+def get_title_sheet():
     return client.open("DataBase").worksheet("Тайтли")
 
 def get_user_sheet():
