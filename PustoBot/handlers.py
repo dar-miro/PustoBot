@@ -2,7 +2,7 @@ from .sheets import load_nickname_map, append_log_row, update_title_table, set_m
 from .core import parse_message
 from telegram import Update
 from telegram.ext import ContextTypes
-from thread_memory import set_thread_title, get_thread_title
+from thread import set_thread_title, get_thread_title
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(

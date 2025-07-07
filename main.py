@@ -3,7 +3,8 @@ import asyncio
 from aiohttp import web
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
-from PustoBot.handlers import start_command, handle_message, add_command, thread_command
+from PustoBot.handlers import start_command, handle_message, add_command
+from thread import get_thread_handler
 from register import get_register_handler
 from publish import publish_command
 from status import status_command
@@ -35,7 +36,7 @@ async def main():
     bot_app.add_handler(CommandHandler("add", add_command_wrapper))
     bot_app.add_handler(CommandHandler("status", lambda u, c: status_command(u, c, sheet)))
     bot_app.add_handler(CommandHandler("publish", lambda u, c: publish_command(u, c, sheet)))
-    bot_app.add_handler(CommandHandler("thread", thread_command))
+    bot_app.add_handler(get_thread_handler())
     bot_app.add_handler(get_register_handler(sheet))
     bot_app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), message_handler_wrapper))
 
