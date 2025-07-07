@@ -5,16 +5,19 @@ from oauth2client.service_account import ServiceAccountCredentials
 scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
 creds = ServiceAccountCredentials.from_json_keyfile_name("credentials.json", scope)
 client = gspread.authorize(creds)
-sheet = client.open("DataBase").sheet1
+
+# Головні аркуші
+log_sheet = client.open("DataBase").worksheet("Журнал")
+main_sheet = client.open("DataBase").sheet1  # Таблиця для адміністраторів
 
 def get_main_sheet():
-    return sheet
+    return main_sheet
 
 def get_user_sheet():
     try:
-        return sheet.spreadsheet.worksheet("Користувачі")
+        return main_sheet.spreadsheet.worksheet("Користувачі")
     except:
-        return sheet.spreadsheet.add_worksheet("Користувачі", rows=100, cols=3)
+        return main_sheet.spreadsheet.add_worksheet("Користувачі", rows=100, cols=3)
 
 def load_nickname_map():
     user_sheet = get_user_sheet()
@@ -30,4 +33,4 @@ def append_log_row(full_name, title, chapter, position, nickname):
         position,
         nickname
     ]
-    sheet.append_row(row)
+    log_sheet.append_row(row)
