@@ -15,10 +15,10 @@ titles_sheet = main_spreadsheet.worksheet("Тайтли")
 
 # Відповідність ролей і колонок
 columns_by_role = {
-    "Клінер": {"nick": "B", "date": "C", "check": "D"},
-    "Перекладач": {"nick": "E", "date": "F", "check": "G"},
-    "Тайпер": {"nick": "H", "date": "I", "check": "J"},
-    "Редактор": {"nick": "K", "date": "L", "check": "M"},
+    "клін": {"nick": "B", "date": "C", "check": "D"},
+    "переклад": {"nick": "E", "date": "F", "check": "G"},
+    "тайп": {"nick": "H", "date": "I", "check": "J"},
+    "ред" or "редакт": {"nick": "K", "date": "L", "check": "M"},
 }
 
 def get_title_sheet():
