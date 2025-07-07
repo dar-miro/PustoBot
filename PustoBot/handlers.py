@@ -1,6 +1,15 @@
 from .sheets import load_nickname_map, append_log_row, update_title_table
 from .core import parse_message
+from telegram import Update
+from telegram.ext import ContextTypes
 
+async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(
+        "Привіт! Надішли мені:\n"
+        "Назва Розділ Позиція Нік (опціонально)\n"
+        "або скористайся командою /add у такому ж форматі."
+    )
+    
 async def process_input(update, context, text, thread_title, bot_username):
     result = parse_message(text, thread_title, bot_username)
     if not result:
