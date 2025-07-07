@@ -1,6 +1,6 @@
 from telegram import Update
 from telegram.ext import ContextTypes
-from PustoBot.sheets import get_titles_sheet
+from PustoBot.sheets import get_title_sheet
 import re
 
 def extract_title_blocks(sheet):
@@ -52,7 +52,7 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE, she
         return
 
     title = match.group(1).strip()
-    titles_sheet = get_titles_sheet()
+    titles_sheet = get_title_sheet()
 
     blocks = extract_title_blocks(titles_sheet)
     for block in blocks:
