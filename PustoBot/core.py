@@ -11,7 +11,12 @@ def parse_message(text, thread_title=None, bot_username=None):
     if text is None: # Додана перевірка на None
         return None
 
-    parts = text.strip().split()
+    # ВИПРАВЛЕНО: Перевіряємо, що text не порожній після strip
+    stripped_text = text.strip()
+    if not stripped_text:
+        return None
+
+    parts = stripped_text.split()
 
     # Якщо текст починається з @бота — пропускаємо цей тег
     if bot_username and parts and parts[0].lower() == f"@{bot_username.lower()}":
