@@ -45,17 +45,14 @@ def get_title_sheet():
 def normalize_title(t):
     return re.sub(r'\\s+', ' ', t.strip().lower().replace("’", "'"))
 
-def get_user_sheet(main_sheet_instance): # Приймаємо екземпляр основного аркуша
+def get_user_sheet(main_sheet_instance):
     if main_sheet_instance is None:
         logger.error("main_sheet_instance не передано для get_user_sheet.")
         return None
     try:
-        # ВИПРАВЛЕНО: Тепер використовуємо main_sheet_instance.worksheet напряму
         return main_sheet_instance.worksheet("Користувачі")
     except gspread.exceptions.WorksheetNotFound:
         logger.warning("Аркуш 'Користувачі' не знайдено, створюю новий.")
-        # Створення нового аркуша з заголовками: "Telegram-нік", "Теґ", "Нік", "Ролі"
-        # ВИПРАВЛЕНО: Тепер використовуємо main_sheet_instance.add_worksheet напряму
         new_sheet = main_sheet_instance.add_worksheet("Користувачі", rows=100, cols=4)
         new_sheet.append_row(["Telegram-нік", "Теґ", "Нік", "Ролі"])
         return new_sheet
@@ -84,7 +81,7 @@ def find_user_row_by_nick_or_tag(telegram_full_name, telegram_tag, desired_nick)
     
     try:
         all_values = user_sheet.get_all_values()
-        if not all_values or len(all_values) < 2: # Перевіряємо, чи є хоча б заголовки і один рядок даних
+        if not all_values or len(all_values) < 2:
             return None, None
         
         headers = all_values[0]
@@ -96,8 +93,8 @@ def find_user_row_by_nick_or_tag(telegram_full_name, telegram_tag, desired_nick)
             logger.error(f"Відсутня необхідна колонка в аркуші 'Користувачі': {e}. Заголовки: {headers}")
             return None, None
 
-        for i, row in enumerate(all_values[1:]): # Починаємо з 1, щоб пропустити заголовки
-            row_index = i + 2 # Індекс рядка в Google Sheets (з урахуванням заголовків та 1-індексації)
+        for i, row in enumerate(all_values[1:]):
+            row_index = i + 2
             
             if len(row) <= max(telegram_nick_col_idx, tag_col_idx, nick_col_idx):
                 continue
@@ -115,6 +112,11 @@ def find_user_row_by_nick_or_tag(telegram_full_name, telegram_tag, desired_nick)
         logger.error(f"Помилка при пошуку користувача за ніком або тегом: {e}")
         return None, None
 
+def _format_telegram_tag(tag):
+    """Додає '@' до тегу, якщо його немає."""
+    if tag and not tag.startswith('@'):
+        return '@' + tag
+    return tag
 
 def update_user_row(row_index, telegram_full_name, telegram_tag, desired_nick, roles):
     user_sheet = get_user_sheet(main_spreadsheet)
@@ -136,7 +138,7 @@ def update_user_row(row_index, telegram_full_name, telegram_tag, desired_nick, r
         roles_col_idx = headers.index("Ролі") + 1
 
         user_sheet.update_cell(row_index, telegram_nick_col_idx, telegram_full_name)
-        user_sheet.update_cell(row_index, tag_col_idx, telegram_tag)
+        user_sheet.update_cell(row_index, tag_col_idx, _format_telegram_tag(telegram_tag)) # ВИПРАВЛЕНО
         user_sheet.update_cell(row_index, nick_col_idx, desired_nick)
         user_sheet.update_cell(row_index, roles_col_idx, roles)
         return True
@@ -150,12 +152,11 @@ def append_user_row(telegram_full_name, telegram_tag, desired_nick, roles):
         logger.error("user_sheet не ініціалізовано, неможливо додати рядок.")
         return False
     try:
-        user_sheet.append_row([telegram_full_name, telegram_tag, desired_nick, roles])
+        user_sheet.append_row([telegram_full_name, _format_telegram_tag(telegram_tag), desired_nick, roles]) # ВИПРАВЛЕНО
         return True
     except Exception as e:
         logger.error(f"Помилка при додаванні нового рядка користувача: {e}")
         return False
-
 
 def append_log_row(telegram_name, telegram_tag, title, chapter, position, nickname):
     if log_sheet is None:
@@ -163,7 +164,7 @@ def append_log_row(telegram_name, telegram_tag, title, chapter, position, nickna
         return False
     try:
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        log_sheet.append_row([now, telegram_name, telegram_tag, title, chapter, position, nickname])
+        log_sheet.append_row([now, telegram_name, _format_telegram_tag(telegram_tag), title, chapter, position, nickname]) # ВИПРАВЛЕНО
         return True
     except Exception as e:
         logger.error(f"Помилка при додаванні запису в лог: {e}")
