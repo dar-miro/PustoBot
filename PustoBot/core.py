@@ -8,6 +8,8 @@ def parse_message(text, thread_title=None, bot_username=None):
     - позиція (position)
     - нікнейм (nickname) — необов’язковий
     """
+    if text is None: # Додана перевірка на None
+        return None
 
     parts = text.strip().split()
 
@@ -24,16 +26,22 @@ def parse_message(text, thread_title=None, bot_username=None):
         return None
 
     # Якщо thread_title немає — шукаємо номер розділу як першу цифру в тексті
+    # (Це логіка для формату "Тайтл 123 Позиція Нік")
     for i, part in enumerate(parts):
-        if re.match(r"^\d+$", part):
+        if re.match(r"^\\d+$", part):
             title = " ".join(parts[:i])
             chapter = part
             position = parts[i + 1] if i + 1 < len(parts) else None
             nickname = parts[i + 2] if i + 2 < len(parts) else None
-
-            if position:
+            
+            # Якщо немає позиції, але є нік, перепризначимо
+            if position is None and nickname is not None:
+                position = nickname
+                nickname = None
+            
+            if title and chapter and position: # Обов'язкові поля
                 return title, chapter, position, nickname
-            return "error"
-
-    # Якщо нічого не підійшло
-    return "error"
+            else:
+                return None # Неповний формат без тайтлу, розділу або позиції
+    
+    return None # Якщо не знайдено числа як розділу, або інших умов не виконано
