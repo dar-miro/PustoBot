@@ -105,7 +105,7 @@ def find_user_row_by_nick_or_tag(telegram_full_name, telegram_tag, desired_nick)
 
             if current_telegram_nick == telegram_full_name.strip().lower() or \
                current_nick == desired_nick.strip().lower() or \
-               (telegram_tag and current_tag == telegram_tag.strip().lower()):
+               (telegram_tag and current_tag == _format_telegram_tag(telegram_tag).strip().lower()): # ВИПРАВЛЕНО: порівнюємо форматований тег
                 return row_index, row
         return None, None
     except Exception as e:
@@ -113,10 +113,13 @@ def find_user_row_by_nick_or_tag(telegram_full_name, telegram_tag, desired_nick)
         return None, None
 
 def _format_telegram_tag(tag):
-    """Додає '@' до тегу, якщо його немає."""
-    if tag and not tag.startswith('@'):
-        return '@' + tag
-    return tag
+    """Додає '@' до тегу, якщо його немає, і повертає пустий рядок, якщо тег None або порожній."""
+    if tag:
+        tag_str = str(tag).strip() # Перетворюємо на string та прибираємо пробіли
+        if tag_str and not tag_str.startswith('@'):
+            return '@' + tag_str
+        return tag_str
+    return "" # Повертаємо пустий рядок, якщо тег None або порожній
 
 def update_user_row(row_index, telegram_full_name, telegram_tag, desired_nick, roles):
     user_sheet = get_user_sheet(main_spreadsheet)
@@ -138,7 +141,7 @@ def update_user_row(row_index, telegram_full_name, telegram_tag, desired_nick, r
         roles_col_idx = headers.index("Ролі") + 1
 
         user_sheet.update_cell(row_index, telegram_nick_col_idx, telegram_full_name)
-        user_sheet.update_cell(row_index, tag_col_idx, _format_telegram_tag(telegram_tag)) # ВИПРАВЛЕНО
+        user_sheet.update_cell(row_index, tag_col_idx, _format_telegram_tag(telegram_tag))
         user_sheet.update_cell(row_index, nick_col_idx, desired_nick)
         user_sheet.update_cell(row_index, roles_col_idx, roles)
         return True
@@ -152,7 +155,7 @@ def append_user_row(telegram_full_name, telegram_tag, desired_nick, roles):
         logger.error("user_sheet не ініціалізовано, неможливо додати рядок.")
         return False
     try:
-        user_sheet.append_row([telegram_full_name, _format_telegram_tag(telegram_tag), desired_nick, roles]) # ВИПРАВЛЕНО
+        user_sheet.append_row([telegram_full_name, _format_telegram_tag(telegram_tag), desired_nick, roles])
         return True
     except Exception as e:
         logger.error(f"Помилка при додаванні нового рядка користувача: {e}")
@@ -164,7 +167,7 @@ def append_log_row(telegram_name, telegram_tag, title, chapter, position, nickna
         return False
     try:
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        log_sheet.append_row([now, telegram_name, _format_telegram_tag(telegram_tag), title, chapter, position, nickname]) # ВИПРАВЛЕНО
+        log_sheet.append_row([now, telegram_name, _format_telegram_tag(telegram_tag), title, chapter, position, nickname])
         return True
     except Exception as e:
         logger.error(f"Помилка при додаванні запису в лог: {e}")
@@ -234,6 +237,11 @@ def get_full_title_data():
         return []
 
 def set_main_roles(title, roles_map):
+    """
+    Встановлює основні ролі для тайтлу.
+    roles_map: словник {role: [nick1, nick2, ...]}
+    Ніки для однієї ролі будуть об'єднані через кому.
+    """
     if titles_sheet is None:
         logger.error("titles_sheet не ініціалізовано, неможливо встановити основні ролі.")
         return False
@@ -251,10 +259,12 @@ def set_main_roles(title, roles_map):
         for i, row in enumerate(data):
             if normalize_title(row[0]) == normalize_title(title):
                 row_num = i + 1
-                for role, nickname in roles_map.items():
+                for role, nicknames_list in roles_map.items(): # Тепер nicknames_list це список
                     col_idx = main_role_cols.get(role)
                     if col_idx != -1 and col_idx is not None:
-                        titles_sheet.update_cell(row_num, col_idx + 1, nickname)
+                        # Об'єднуємо ніки у рядок, розділяючи комою
+                        nicknames_str = ", ".join(nicknames_list)
+                        titles_sheet.update_cell(row_num, col_idx + 1, nicknames_str)
                 return True
         logger.warning(f"Тайтл '{title}' не знайдено для встановлення основних ролей.")
         return False

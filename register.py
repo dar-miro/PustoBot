@@ -12,9 +12,9 @@ from PustoBot.sheets import (
     load_nickname_map, 
     append_log_row, 
     get_user_sheet,
-    find_user_row_by_nick_or_tag, # Імпортуємо нові функції
-    update_user_row,             # Імпортуємо нові функції
-    append_user_row              # Імпортуємо нові функції
+    find_user_row_by_nick_or_tag,
+    update_user_row,
+    append_user_row
 )
 
 logger = logging.getLogger(__name__)
@@ -36,12 +36,11 @@ async def start_register(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def handle_nickname_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
     desired_nick = update.message.text.strip()
     telegram_full_name = update.message.from_user.full_name
-    telegram_username = update.message.from_user.username # Отримуємо тег телеграму
+    telegram_username = update.message.from_user.username
 
-    # Зберігаємо дані для подальшого використання
     context.user_data["desired_nick"] = desired_nick
     context.user_data["telegram_full_name"] = telegram_full_name
-    context.user_data["telegram_username"] = telegram_username if telegram_username else "" # Забезпечуємо, що це не None
+    context.user_data["telegram_username"] = telegram_username if telegram_username else ""
 
     main_spreadsheet_instance = context.bot_data.get('main_spreadsheet_instance')
     if main_spreadsheet_instance is None:
@@ -49,7 +48,6 @@ async def handle_nickname_input(update: Update, context: ContextTypes.DEFAULT_TY
         logger.error("main_spreadsheet_instance is None in handle_nickname_input.")
         return ConversationHandler.END
 
-    # Шукаємо існуючого користувача
     existing_row_index, existing_row_data = find_user_row_by_nick_or_tag(
         telegram_full_name, telegram_username, desired_nick
     )
@@ -61,19 +59,21 @@ async def handle_nickname_input(update: Update, context: ContextTypes.DEFAULT_TY
         reply_keyboard = [
             [KeyboardButton("Так"), KeyboardButton("Ні")]
         ]
+        # ВИПРАВЛЕНО: Використання HTML для переносів та parse_mode="HTML"
         await update.message.reply_text(
-            f"ℹ️ Здається, ви вже зареєстровані, або цей нік/Telegram-нік вже використовується.\\n"
-            f"Знайдено: Telegram-нік: '{existing_row_data[0]}', Тег: '{existing_row_data[1]}', Нік: '{existing_row_data[2]}', Ролі: '{existing_row_data[3]}'\\n"
-            f"Бажаєте перезаписати свої дані на актуальні (новий нік '{desired_nick}' та тег '{telegram_username if telegram_username else 'відсутній'}')?",
-            reply_markup=ReplyKeyboardMarkup(reply_keyboard, one_time_keyboard=True, resize_keyboard=True)
+            f"ℹ️ Здається, ви вже зареєстровані, або цей нік/Telegram-нік вже використовується.<br>"
+            f"Знайдено: Telegram-нік: '{existing_row_data[0]}', Тег: '{existing_row_data[1]}', Нік: '{existing_row_data[2]}', Ролі: '{existing_row_data[3]}'<br>"
+            f"Бажаєте перезаписати свої дані на актуальні (новий нік '{desired_nick}' та тег '@{telegram_username}'{' (відсутній)' if not telegram_username else ''})?",
+            reply_markup=ReplyKeyboardMarkup(reply_keyboard, one_time_keyboard=True, resize_keyboard=True),
+            parse_mode="HTML"
         )
         return CONFIRM_OVERWRITE
     else:
-        # Користувача не знайдено, переходимо до запиту ролей
         await update.message.reply_text(
-            "🛠 Введи ролі вручну через кому (наприклад: Клінер, Тайпер).\\n"
+            "🛠 Введи ролі вручну через кому (наприклад: Клінер, Тайпер).<br>"
             "Можливі ролі: Клінер, Перекладач, Тайпер, Редактор",
-            reply_markup=ReplyKeyboardRemove()
+            reply_markup=ReplyKeyboardRemove(),
+            parse_mode="HTML"
         )
         return ASK_ROLES
 
@@ -82,21 +82,16 @@ async def confirm_overwrite(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_choice = update.message.text.strip().lower()
 
     if user_choice == "так":
-        # Перезаписуємо дані
         existing_row_index = context.user_data["existing_row_index"]
         desired_nick = context.user_data["desired_nick"]
         telegram_full_name = context.user_data["telegram_full_name"]
         telegram_username = context.user_data["telegram_username"]
         
-        # На цьому етапі ролі ще не відомі, тому оновимо їх пізніше
-        # Або можна зберегти старі ролі, якщо вони потрібні
-        # Для простоти зараз, ми їх запитаємо знову або залишимо порожніми на цьому кроці
-
-        # Просимо ролі після підтвердження перезапису
         await update.message.reply_text(
-            "🛠 Добре, дані буде оновлено. Тепер введи свої ролі вручну через кому (наприклад: Клінер, Тайпер).\\n"
+            "🛠 Добре, дані буде оновлено. Тепер введи свої ролі вручну через кому (наприклад: Клінер, Тайпер).<br>"
             "Можливі ролі: Клінер, Перекладач, Тайпер, Редактор",
-            reply_markup=ReplyKeyboardRemove()
+            reply_markup=ReplyKeyboardRemove(),
+            parse_mode="HTML"
         )
         return ASK_ROLES
     elif user_choice == "ні":
@@ -110,14 +105,12 @@ async def confirm_overwrite(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "Будь ласка, оберіть 'Так' або 'Ні'.",
             reply_markup=ReplyKeyboardMarkup(reply_keyboard, one_time_keyboard=True, resize_keyboard=True)
         )
-        return CONFIRM_OVERWRITE # Залишаємося на цьому ж кроці
+        return CONFIRM_OVERWRITE
 
 # Запитати ролі (після введення нового ніку або підтвердження перезапису)
 async def ask_roles(update: Update, context: ContextTypes.DEFAULT_TYPE):
     roles = update.message.text.strip()
-    context.user_data["roles"] = roles # Зберігаємо ролі
-
-    # Тепер викликаємо фіналізацію реєстрації
+    context.user_data["roles"] = roles
     return await finish_register(update, context)
 
 
@@ -136,7 +129,6 @@ async def finish_register(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return ConversationHandler.END
 
     if existing_row_index:
-        # Оновлюємо існуючий рядок
         success = update_user_row(
             existing_row_index, telegram_full_name, telegram_username, desired_nick, roles
         )
@@ -145,7 +137,6 @@ async def finish_register(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             await update.message.reply_text("⚠️ Виникла помилка під час оновлення даних. Спробуйте ще раз.", reply_markup=ReplyKeyboardRemove())
     else:
-        # Додаємо новий рядок
         success = append_user_row(
             telegram_full_name, telegram_username, desired_nick, roles
         )
@@ -154,14 +145,13 @@ async def finish_register(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             await update.message.reply_text("⚠️ Виникла помилка під час збереження даних. Спробуйте ще раз.", reply_markup=ReplyKeyboardRemove())
     
-    # Очищаємо user_data після завершення розмови
     context.user_data.clear()
     return ConversationHandler.END
 
 # Скасування
 async def cancel_register(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("❌ Реєстрацію скасовано.", reply_markup=ReplyKeyboardRemove())
-    context.user_data.clear() # Очищаємо дані при скасуванні
+    context.user_data.clear()
     return ConversationHandler.END
 
 # Обгортка для отримання обробника розмови
@@ -170,7 +160,6 @@ def get_register_handler(main_spreadsheet_instance):
         context.bot_data['main_spreadsheet_instance'] = main_spreadsheet_instance
         return await start_register(update, context)
 
-    # Оновлення обробників станів для передачі контексту
     async def _handle_nickname_input_with_context(update, context):
         context.bot_data['main_spreadsheet_instance'] = main_spreadsheet_instance
         return await handle_nickname_input(update, context)
