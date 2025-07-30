@@ -21,9 +21,6 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Спроба отримати sheet на початку. Якщо не вдасться, sheet буде None.
-# Важливо: `main_spreadsheet` з sheets.py є глобальним об'єктом,
-# і його ініціалізація відбувається при імпорті `sheets.py`.
-# Якщо у sheets.py сталася помилка ініціалізації, `main_spreadsheet` може бути `None`.
 sheet = get_title_sheet()
 if sheet is None:
     logger.error("Failed to initialize Google Sheets connection. Bot may not function correctly.")
