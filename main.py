@@ -7,7 +7,7 @@ from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, fil
 
 # Імпорти з ваших модулів
 from PustoBot.handlers import start_command, handle_message, add_command
-from thread import get_thread_handler, set_thread_title_command, get_thread_title_command # Додано set/get_thread_title_command, якщо це окремі команди
+from thread import get_thread_handler, set_thread_title, get_thread_title # Додано set/get_thread_title_command, якщо це окремі команди
 from register import get_register_handler
 from publish import publish_command
 from status import status_command
@@ -66,8 +66,8 @@ async def main():
     # Реєстрація ConversationHandler для /thread
     bot_app.add_handler(get_thread_handler())
     # Якщо у вас set_thread_title_command та get_thread_title_command є окремими CommandHandler:
-    # bot_app.add_handler(CommandHandler("setthread", set_thread_title_command))
-    # bot_app.add_handler(CommandHandler("getthread", get_thread_title_command))
+    bot_app.add_handler(CommandHandler("setthread", set_thread_title))
+    bot_app.add_handler(CommandHandler("getthread", get_thread_title))
 
     # Реєстрація ConversationHandler для /register
     bot_app.add_handler(get_register_handler(main_spreadsheet)) # Передаємо main_spreadsheet
