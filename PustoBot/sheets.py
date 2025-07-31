@@ -28,21 +28,14 @@ try:
 except Exception as e:
     logger.error(f"Помилка підключення до Google Sheets: {e}")
 
-# Відповідність ролей і колонок
-columns_by_role = {
-    "клін": {"nick": "B", "date": "C", "check": "D"},
-    "переклад": {"nick": "E", "date": "F", "check": "G"},
-    "тайп": {"nick": "H", "date": "I", "check": "J"},
-    "ред": {"nick": "K", "date": "L", "check": "M"},
-    "редакт": {"nick": "K", "date": "L", "check": "M"},
-}
-
 def get_title_sheet():
     if titles_sheet is None:
         logger.error("titles_sheet не ініціалізовано. Можливо, проблема з credentials.json або доступом.")
     return titles_sheet
 
 def normalize_title(t):
+    if not isinstance(t, str):
+        return ""
     return re.sub(r'\\s+', ' ', t.strip().lower().replace("’", "'"))
 
 def get_user_sheet(main_sheet_instance):
@@ -178,29 +171,66 @@ def update_title_table(title, chapter, role, nickname, titles_sheet_instance):
         logger.error("titles_sheet не ініціалізовано, неможливо оновити таблицю.")
         return False
 
-    role_columns = columns_by_role.get(role.lower())
-    if not role_columns:
-        logger.warning(f"Невідома роль для оновлення: {role}")
-        return False
+    try:
+        all_values = titles_sheet_instance.get_all_values()
+        
+        # Знаходимо блок для тайтлу
+        title_row_idx, header_row_idx = -1, -1
+        for i, row in enumerate(all_values):
+            if normalize_title(row[0]) == normalize_title(title):
+                title_row_idx = i
+                header_row_idx = i + 1
+                break
+        
+        if title_row_idx == -1 or header_row_idx >= len(all_values):
+            logger.warning(f"Тайтл '{title}' не знайдено для оновлення.")
+            return False
 
-    blocks = get_title_blocks()
-    for block_title, start_row, end_row in blocks:
-        if normalize_title(block_title) == normalize_title(title):
-            rows = titles_sheet_instance.get_all_values()[start_row:end_row]
-            for i, row in enumerate(rows):
-                if row and len(row) > 0 and chapter.strip() == row[0].strip():
-                    actual_row = start_row + i + 1
-                    now = datetime.now().strftime("%Y-%m-%d")
-                    try:
-                        titles_sheet_instance.update_acell(f"{role_columns['nick']}{actual_row}", nickname)
-                        titles_sheet_instance.update_acell(f"{role_columns['date']}{actual_row}", now)
-                        titles_sheet_instance.update_acell(f"{role_columns['check']}{actual_row}", "✅")
-                        return True
-                    except Exception as e:
-                        logger.error(f"Помилка при оновленні комірки в Google Sheets: {e}")
-                        return False
-    logger.warning(f"Не знайдено розділ '{chapter}' для тайтлу '{title}' для оновлення.")
-    return False
+        headers_main = all_values[title_row_idx]
+        headers_sub = all_values[header_row_idx]
+        
+        # Знаходимо індекси колонок для ролі
+        role_col_start_idx = -1
+        try:
+            role_col_start_idx = headers_main.index(role.capitalize()) # 'Клін', 'Переклад'
+        except ValueError:
+            try:
+                # Обробка 'редакт', якщо він підпадає під 'Редакт'
+                if role == 'редакт' and 'Редакт' in headers_main:
+                    role_col_start_idx = headers_main.index('Редакт')
+                else:
+                    logger.warning(f"Невідома роль для оновлення: {role}")
+                    return False
+            except ValueError:
+                logger.warning(f"Невідома роль для оновлення: {role}")
+                return False
+
+        # Знаходимо індекси підколонок
+        nick_col_offset = headers_sub[role_col_start_idx:].index("Нік")
+        date_col_offset = headers_sub[role_col_start_idx:].index("Дата")
+        status_col_offset = headers_sub[role_col_start_idx:].index("Статус")
+        
+        nick_col_idx = role_col_start_idx + nick_col_offset + 1
+        date_col_idx = role_col_start_idx + date_col_offset + 1
+        status_col_idx = role_col_start_idx + status_col_offset + 1
+
+        # Шукаємо рядок з потрібним розділом
+        start_data_row_idx = header_row_idx + 1
+        for i, row in enumerate(all_values[start_data_row_idx:]):
+            actual_row_idx = start_data_row_idx + i
+            if len(row) > 0 and str(row[0]).strip() == str(chapter).strip():
+                now = datetime.now().strftime("%Y-%m-%d")
+                
+                titles_sheet_instance.update_cell(actual_row_idx + 1, nick_col_idx, nickname)
+                titles_sheet_instance.update_cell(actual_row_idx + 1, date_col_idx, now)
+                titles_sheet_instance.update_cell(actual_row_idx + 1, status_col_idx, "✅")
+                return True
+
+        logger.warning(f"Не знайдено розділ '{chapter}' для тайтлу '{title}' для оновлення.")
+        return False
+    except Exception as e:
+        logger.error(f"Помилка при оновленні комірки в Google Sheets: {e}")
+        return False
 
 def get_title_blocks():
     if titles_sheet is None:
@@ -212,13 +242,17 @@ def get_title_blocks():
         current_title = None
         start_row = None
         for i, row in enumerate(data):
-            if row and row[0].strip() and not row[0].strip().lower().startswith("розділ"):
+            # Якщо перший елемент заповнений, а другий порожній, це може бути тайтл
+            if row and row[0].strip() and (len(row) <= 1 or not row[1].strip()):
                 if current_title is None:
                     current_title = row[0].strip()
-                    start_row = i
+                    # Дані починаються через 2 рядки (після тайтлу і заголовків)
+                    start_row = i + 2
+            # Якщо поточний рядок порожній і ми в блоці, то це кінець блоку
             elif not any(row) and current_title is not None:
                 blocks.append((current_title, start_row, i))
                 current_title = None
+        # Якщо файл закінчується з блоком, додаємо його
         if current_title:
             blocks.append((current_title, start_row, len(data)))
         return blocks
@@ -247,23 +281,39 @@ def set_main_roles(title, roles_map):
         return False
     try:
         data = titles_sheet.get_all_values()
-        headers = data[0] if data else []
         
-        main_role_cols = {
-            "клін": headers.index("Осн. Клін") if "Осн. Клін" in headers else -1,
-            "переклад": headers.index("Осн. Переклад") if "Осн. Переклад" in headers else -1,
-            "тайп": headers.index("Осн. Тайп") if "Осн. Тайп" in headers else -1,
-            "редакт": headers.index("Осн. Редакт") if "Осн. Редакт" in headers else -1,
-        }
-
+        # Знаходимо рядок тайтлу для оновлення
         for i, row in enumerate(data):
-            if normalize_title(row[0]) == normalize_title(title):
+            if row and len(row) > 0 and normalize_title(row[0]) == normalize_title(title):
+                # Рядок з тайтлом - це i, а заголовки ролей - i+1
+                headers_main = data[i]
+                main_role_cols = {
+                    "клін": headers_main.index("Клін") if "Клін" in headers_main else -1,
+                    "переклад": headers_main.index("Переклад") if "Переклад" in headers_main else -1,
+                    "тайп": headers_main.index("Тайп") if "Тайп" in headers_main else -1,
+                    "редакт": headers_main.index("Редакт") if "Редакт" in headers_main else -1,
+                }
+                
+                # Знаходимо рядок з ніками для оновлення. У вашому форматі це рядок з тайтлом.
                 row_num = i + 1
+                
+                # Оновлюємо колонки для кожної ролі
+                headers_sub = data[i+1] if i + 1 < len(data) else []
+                
                 for role, nicknames_list in roles_map.items():
-                    col_idx = main_role_cols.get(role)
-                    if col_idx != -1 and col_idx is not None:
-                        nicknames_str = ", ".join(nicknames_list)
-                        titles_sheet.update_cell(row_num, col_idx + 1, nicknames_str)
+                    col_idx_main = main_role_cols.get(role)
+                    if col_idx_main != -1 and col_idx_main is not None:
+                        # Знаходимо колонку 'Нік' в підзаголовках, що належить цій ролі
+                        try:
+                            # Шукаємо 'Нік' в підзаголовках, починаючи з індексу основної ролі
+                            sub_header_slice = headers_sub[col_idx_main:]
+                            nick_offset = sub_header_slice.index('Нік')
+                            nick_col_idx = col_idx_main + nick_offset
+                            
+                            nicknames_str = ", ".join(nicknames_list)
+                            titles_sheet.update_cell(row_num, nick_col_idx + 1, nicknames_str)
+                        except ValueError:
+                            logger.warning(f"Не знайдено підколонку 'Нік' для ролі '{role}'")
                 return True
         logger.warning(f"Тайтл '{title}' не знайдено для встановлення основних ролей.")
         return False
