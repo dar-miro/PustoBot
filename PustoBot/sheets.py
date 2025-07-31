@@ -177,7 +177,7 @@ def update_title_table(title, chapter, role, nickname, titles_sheet_instance):
         # Знаходимо блок для тайтлу
         title_row_idx, header_row_idx = -1, -1
         for i, row in enumerate(all_values):
-            if normalize_title(row[0]) == normalize_title(title):
+            if row and normalize_title(row[0]) == normalize_title(title):
                 title_row_idx = i
                 header_row_idx = i + 1
                 break
@@ -189,27 +189,32 @@ def update_title_table(title, chapter, role, nickname, titles_sheet_instance):
         headers_main = all_values[title_row_idx]
         headers_sub = all_values[header_row_idx]
         
-        # Знаходимо індекси колонок для ролі
+        # Знаходимо індекси колонок для ролі (чутливо до регістру)
         role_col_start_idx = -1
-        try:
-            role_col_start_idx = headers_main.index(role.capitalize()) # 'Клін', 'Переклад'
-        except ValueError:
+        role_map = {
+            "клін": "Клін", "переклад": "Переклад",
+            "тайп": "Тайп", "ред": "Редакт", "редакт": "Редакт"
+        }
+        target_role = role_map.get(role.lower())
+        if target_role:
             try:
-                # Обробка 'редакт', якщо він підпадає під 'Редакт'
-                if role == 'редакт' and 'Редакт' in headers_main:
-                    role_col_start_idx = headers_main.index('Редакт')
-                else:
-                    logger.warning(f"Невідома роль для оновлення: {role}")
-                    return False
+                role_col_start_idx = headers_main.index(target_role)
             except ValueError:
-                logger.warning(f"Невідома роль для оновлення: {role}")
+                logger.warning(f"Не знайдено колонку для ролі '{target_role}'. Заголовки: {headers_main}")
                 return False
+        else:
+            logger.warning(f"Невідома роль для оновлення: {role}")
+            return False
 
         # Знаходимо індекси підколонок
-        nick_col_offset = headers_sub[role_col_start_idx:].index("Нік")
-        date_col_offset = headers_sub[role_col_start_idx:].index("Дата")
-        status_col_offset = headers_sub[role_col_start_idx:].index("Статус")
-        
+        try:
+            nick_col_offset = headers_sub[role_col_start_idx:].index("Нік")
+            date_col_offset = headers_sub[role_col_start_idx:].index("Дата")
+            status_col_offset = headers_sub[role_col_start_idx:].index("Статус")
+        except ValueError:
+            logger.warning(f"Відсутні підколонки Нік, Дата, Статус для ролі '{target_role}'.")
+            return False
+
         nick_col_idx = role_col_start_idx + nick_col_offset + 1
         date_col_idx = role_col_start_idx + date_col_offset + 1
         status_col_idx = role_col_start_idx + status_col_offset + 1
@@ -287,33 +292,37 @@ def set_main_roles(title, roles_map):
             if row and len(row) > 0 and normalize_title(row[0]) == normalize_title(title):
                 # Рядок з тайтлом - це i, а заголовки ролей - i+1
                 headers_main = data[i]
-                main_role_cols = {
-                    "клін": headers_main.index("Клін") if "Клін" in headers_main else -1,
-                    "переклад": headers_main.index("Переклад") if "Переклад" in headers_main else -1,
-                    "тайп": headers_main.index("Тайп") if "Тайп" in headers_main else -1,
-                    "редакт": headers_main.index("Редакт") if "Редакт" in headers_main else -1,
+                
+                role_map = {
+                    "клін": "Клін", "переклад": "Переклад",
+                    "тайп": "Тайп", "редакт": "Редакт"
                 }
-                
-                # Знаходимо рядок з ніками для оновлення. У вашому форматі це рядок з тайтлом.
-                row_num = i + 1
-                
+
                 # Оновлюємо колонки для кожної ролі
                 headers_sub = data[i+1] if i + 1 < len(data) else []
                 
                 for role, nicknames_list in roles_map.items():
-                    col_idx_main = main_role_cols.get(role)
-                    if col_idx_main != -1 and col_idx_main is not None:
-                        # Знаходимо колонку 'Нік' в підзаголовках, що належить цій ролі
-                        try:
-                            # Шукаємо 'Нік' в підзаголовках, починаючи з індексу основної ролі
-                            sub_header_slice = headers_sub[col_idx_main:]
-                            nick_offset = sub_header_slice.index('Нік')
-                            nick_col_idx = col_idx_main + nick_offset
-                            
-                            nicknames_str = ", ".join(nicknames_list)
-                            titles_sheet.update_cell(row_num, nick_col_idx + 1, nicknames_str)
-                        except ValueError:
-                            logger.warning(f"Не знайдено підколонку 'Нік' для ролі '{role}'")
+                    target_role = role_map.get(role)
+                    if not target_role:
+                        logger.warning(f"Невідома роль для встановлення основних ролей: {role}")
+                        continue
+                    
+                    try:
+                        col_idx_main = headers_main.index(target_role)
+                    except ValueError:
+                        logger.warning(f"Не знайдено колонку для ролі '{target_role}'.")
+                        continue
+                    
+                    try:
+                        # Шукаємо 'Нік' в підзаголовках, починаючи з індексу основної ролі
+                        sub_header_slice = headers_sub[col_idx_main:]
+                        nick_offset = sub_header_slice.index('Нік')
+                        nick_col_idx = col_idx_main + nick_offset
+                        
+                        nicknames_str = ", ".join(nicknames_list)
+                        titles_sheet.update_cell(i + 2, nick_col_idx + 1, nicknames_str)
+                    except ValueError:
+                        logger.warning(f"Не знайдено підколонку 'Нік' для ролі '{target_role}'")
                 return True
         logger.warning(f"Тайтл '{title}' не знайдено для встановлення основних ролей.")
         return False

@@ -46,36 +46,25 @@ async def publish_command(update: Update, context: ContextTypes.DEFAULT_TYPE, sh
         data = titles_sheet.get_all_values()
         
         # Знаходимо блок для тайтлу
-        title_row_idx, header_row_idx = -1, -1
+        title_row_idx = -1
         for i, row in enumerate(data):
             if row and normalize_title(row[0]) == normalize_title(title):
                 title_row_idx = i
-                header_row_idx = i + 1
                 break
         
-        if title_row_idx == -1 or header_row_idx >= len(data):
+        if title_row_idx == -1:
             await update.message.reply_text(f"⚠️ Тайтл '{title}' не знайдено.")
-            return
-
-        headers = data[header_row_idx]
-        
-        # Перевіряємо наявність необхідних колонок
-        try:
-            chapter_col_idx = headers.index("Розділ")
-            published_col_idx = headers.index("Статус")
-        except ValueError:
-            await update.message.reply_text(
-                "⚠️ Помилка: не знайдено необхідну колонку 'Розділ' або 'Статус' в таблиці 'Тайтли'."
-            )
             return
 
         updated = False
         
         # Шукаємо рядок з розділом
-        for i, row in enumerate(data[header_row_idx + 1:]):
-            if len(row) > chapter_col_idx and str(row[chapter_col_idx]).strip() == str(chapter).strip():
-                row_index_to_update = header_row_idx + 2 + i
-                titles_sheet.update_cell(row_index_to_update, published_col_idx + 1, "✅")
+        for i, row in enumerate(data[title_row_idx + 2:]):
+            if len(row) > 0 and str(row[0]).strip() == str(chapter).strip():
+                # Знайшли потрібний рядок, оновлюємо останню колонку
+                row_index_to_update = title_row_idx + 3 + i
+                last_col_idx = len(row)
+                titles_sheet.update_cell(row_index_to_update, last_col_idx, "✅")
                 await update.message.reply_text(f"✅ Успішно оновлено: *{data[title_row_idx][0]}* (розділ *{chapter}*) тепер позначено як 'Опубліковано'.", parse_mode="Markdown")
                 updated = True
                 break
