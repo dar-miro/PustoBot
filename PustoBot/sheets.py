@@ -3,6 +3,7 @@ from datetime import datetime
 from oauth2client.service_account import ServiceAccountCredentials
 import re
 import logging
+import os # ДОДАНО: імпорт модуля os
 
 # Налаштування логування
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -17,7 +18,9 @@ log_sheet = None
 titles_sheet = None
 
 try:
-    creds = ServiceAccountCredentials.from_json_keyfile_name("credentials.json", scope)
+    # ВИПРАВЛЕНО: Використовуємо абсолютний шлях до файлу credentials.json
+    creds_path = os.path.join(os.path.dirname(__file__), '..', 'credentials.json')
+    creds = ServiceAccountCredentials.from_json_keyfile_name(creds_path, scope)
     client = gspread.authorize(creds)
     main_spreadsheet = client.open("DataBase")
     log_sheet = main_spreadsheet.worksheet("Журнал")
