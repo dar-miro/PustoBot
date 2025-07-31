@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 # Обгортки для передачі об'єкта `main_spreadsheet` з sheets.py
 async def message_handler_wrapper(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # handle_message працює з log_sheet
-    await handle_message(update, context, log_sheet, titles_sheet)
+    await handle_message(update, context, titles_sheet) # ВИПРАВЛЕНО: передаємо titles_sheet для парсингу
 
 async def add_command_wrapper(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # ВИПРАВЛЕНО: передаємо titles_sheet для оновлення таблиці

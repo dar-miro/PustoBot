@@ -18,7 +18,6 @@ log_sheet = None
 titles_sheet = None
 
 try:
-    # Використовуємо абсолютний шлях до файлу credentials.json
     creds_path = os.path.join(os.path.dirname(__file__), '..', 'credentials.json')
     creds = ServiceAccountCredentials.from_json_keyfile_name(creds_path, scope)
     client = gspread.authorize(creds)
@@ -168,13 +167,12 @@ def append_log_row(telegram_name, telegram_tag, title, chapter, position, nickna
         return False
     try:
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        log_sheet.append_row([now, telegram_name, _format_telegram_tag(telegram_tag), title, chapter, position, nickname])
+        log_sheet.append_row([now, telegram_name, telegram_tag, title, chapter, position, nickname])
         return True
     except Exception as e:
         logger.error(f"Помилка при додаванні запису в лог: {e}")
         return False
 
-# ВИПРАВЛЕНО: додано параметр titles_sheet_instance
 def update_title_table(title, chapter, role, nickname, titles_sheet_instance):
     if titles_sheet_instance is None:
         logger.error("titles_sheet не ініціалізовано, неможливо оновити таблицю.")
