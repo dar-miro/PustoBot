@@ -1,7 +1,7 @@
 import logging
 from telegram import Update
 from telegram.ext import ContextTypes
-from .PustoBot.sheets import set_publish_status
+from PustoBot.sheets import set_publish_status
 from thread import get_thread_title
 
 logger = logging.getLogger(__name__)

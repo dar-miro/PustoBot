@@ -11,7 +11,7 @@ from thread import get_thread_handler
 from register import get_register_handler
 from publish import publish_command
 from status import status_command
-from .PustoBot.sheets import main_spreadsheet, initialize_header_map # Додано initialize_header_map
+from PustoBot.sheets import main_spreadsheet, initialize_header_map # Додано initialize_header_map
 
 # Налаштування логування
 logging.basicConfig(
