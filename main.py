@@ -7,11 +7,11 @@ from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, fil
 
 # Імпорти з ваших модулів
 from PustoBot.handlers import start_command, handle_message, add_command
-from thread import get_thread_handler, set_thread_title, get_thread_title # Додано set/get_thread_title_command, якщо це окремі команди
+from thread import get_thread_handler
 from register import get_register_handler
 from publish import publish_command
 from status import status_command
-from PustoBot.sheets import get_title_sheet, main_spreadsheet # Імпортуємо main_spreadsheet напряму
+from PustoBot.sheets import main_spreadsheet, log_sheet, titles_sheet # ВИПРАВЛЕНО: імпортуємо specific sheets
 
 # Налаштування логування
 logging.basicConfig(
@@ -19,23 +19,22 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Отримуємо основний аркуш для передачі в обробники
-# sheet = get_title_sheet() # Використовуємо main_spreadsheet напряму через sheets.py
-
 # Обгортки для передачі об'єкта `main_spreadsheet` з sheets.py
 async def message_handler_wrapper(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # Pass the main_spreadsheet object from sheets directly
-    await handle_message(update, context, main_spreadsheet)
+    # handle_message працює з log_sheet
+    await handle_message(update, context, log_sheet, titles_sheet)
 
 async def add_command_wrapper(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # Pass the main_spreadsheet object from sheets directly
-    await add_command(update, context, main_spreadsheet)
+    # ВИПРАВЛЕНО: передаємо titles_sheet для оновлення таблиці
+    await add_command(update, context, titles_sheet)
 
 async def status_command_wrapper(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await status_command(update, context, main_spreadsheet)
+    # ВИПРАВЛЕНО: передаємо titles_sheet для отримання статусу
+    await status_command(update, context, titles_sheet)
 
 async def publish_command_wrapper(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await publish_command(update, context, main_spreadsheet)
+    # ВИПРАВЛЕНО: передаємо titles_sheet для публікації
+    await publish_command(update, context, titles_sheet)
 
 # Функції для вебхуків (як у вашому прикладі)
 async def handle_ping(request):
@@ -49,7 +48,7 @@ async def handle_webhook(request):
     return web.Response(text='OK')
 
 async def main():
-    TOKEN = os.getenv("TELEGRAM_BOT_TOKEN") # Використовуємо TELEGRAM_BOT_TOKEN як змінну середовища
+    TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
     if not TOKEN:
         logger.error("TELEGRAM_BOT_TOKEN environment variable not set.")
         return
@@ -65,17 +64,11 @@ async def main():
     
     # Реєстрація ConversationHandler для /thread
     bot_app.add_handler(get_thread_handler())
-    # Якщо у вас set_thread_title_command та get_thread_title_command є окремими CommandHandler:
-    bot_app.add_handler(CommandHandler("setthread", set_thread_title))
-    bot_app.add_handler(CommandHandler("getthread", get_thread_title))
 
     # Реєстрація ConversationHandler для /register
-    bot_app.add_handler(get_register_handler(main_spreadsheet)) # Передаємо main_spreadsheet
+    bot_app.add_handler(get_register_handler(main_spreadsheet))
 
-    # ВИПРАВЛЕНО: Обробник для звичайних повідомлень тепер спрацьовує тільки якщо:
-    # 1. Це відповідь на повідомлення бота (filters.REPLY)
-    # 2. Або текст повідомлення містить @username бота (filters.Entity("mention"))
-    # (filters.TEXT & ~filters.COMMAND) - це базова умова, що це текст і не команда.
+    # Обробник для звичайних повідомлень
     bot_app.add_handler(
         MessageHandler(
             (filters.TEXT & ~filters.COMMAND & filters.REPLY) |
@@ -106,7 +99,4 @@ async def main():
 
 
 if __name__ == "__main__":
-    # Ensure all necessary sheets are initialized at startup
-    # This might need to be called explicitly if not handled by gspread's init
-    # For now, rely on sheets.py global initialization
     asyncio.run(main())
