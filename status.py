@@ -1,64 +1,63 @@
+import logging
 from telegram import Update
 from telegram.ext import ContextTypes
-from PustoBot.sheets import get_title_sheet
-import re
+from PustoBot.sheets import get_title_data, normalize_title, titles_sheet
 
-def extract_title_blocks(sheet):
-    data = sheet.get_all_values()
-    blocks = []
-    current_title = None
-    start_row = None
-    for i, row in enumerate(data):
-        if any(row):
-            if current_title is None and row[0]:
-                current_title = row[0]
-                start_row = i
-        else:
-            if current_title is not None:
-                blocks.append((current_title, start_row, i))
-                current_title = None
-    if current_title:
-        blocks.append((current_title, start_row, len(data)))
-    return blocks
-
-def extract_status_text(sheet, title_block):
-    title, start_row, end_row = title_block
-    rows = sheet.get_all_values()[start_row+2:end_row]  # Розділи починаються з 3 рядка
-    if not rows:
-        return f"ℹ️ Немає розділів для {title}"
-    
-    text = f"📚 *{title}*\n"
-    for i, row in enumerate(rows):
-        chapter = row[0]
-        if not chapter:
-            continue
-        line = f"— *{chapter}*: "
-        roles = ["Клін", "Переклад", "Тайп", "Редакт"]
-        col_offset = {"Клін": 1, "Переклад": 4, "Тайп": 7, "Редакт": 10}
-        for role in roles:
-            name = row[col_offset[role]]
-            done = row[col_offset[role] + 2]
-            mark = "✅" if done == "✅" else "❌"
-            if name:
-                line += f"{role}: `{name}` {mark}, "
-        text += line.rstrip(", ") + "\n"
-    return text
+logger = logging.getLogger(__name__)
 
 async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE, sheet):
-    text = update.message.text
-    match = re.match(r"/status\s+(.+)", text)
-    if not match:
-        await update.message.reply_text("⚠️ Напиши команду у форматі:\n/status НазваТайтлу")
+    """Надає статус усіх розділів для вказаного тайтлу."""
+    message = update.message
+    if not message or not message.text:
+        return
+    
+    text = message.text[len("/status "):].strip()
+    title = text
+    
+    if not title:
+        await update.message.reply_text("⚠️ Будь ласка, вкажіть назву тайтлу. Наприклад: `/status Відьмоварта`")
+        return
+    
+    if titles_sheet is None:
+        logger.error("titles_sheet не ініціалізовано. Неможливо отримати статус.")
+        await update.message.reply_text("⚠️ Внутрішня помилка: аркуш 'Тайтли' не ініціалізовано.")
         return
 
-    title = match.group(1).strip()
-    titles_sheet = get_title_sheet()
-
-    blocks = extract_title_blocks(titles_sheet)
-    for block in blocks:
-        if block[0].strip().lower() == title.lower():
-            msg = extract_status_text(titles_sheet, block)
-            await update.message.reply_text(msg, parse_mode="Markdown")
+    try:
+        title_data, headers = get_title_data(title, titles_sheet)
+        if title_data is None:
+            await update.message.reply_text(f"⚠️ Тайтл '{title}' не знайдено.")
             return
 
-    await update.message.reply_text("⚠️ Тайтл не знайдено.")
+        response = f"📊 *Статус тайтлу '{title}':*\n\n"
+        
+        # Знаходимо індекси колонок для кожної ролі
+        role_map = {
+            "Клін": [], "Переклад": [],
+            "Тайп": [], "Редакт": []
+        }
+        
+        main_headers = titles_sheet.row_values(titles_sheet.find(title).row)
+        sub_headers = titles_sheet.row_values(titles_sheet.find(title).row + 1)
+        
+        for i, header in enumerate(main_headers):
+            if header in role_map:
+                status_col_idx = sub_headers.index("Статус", i)
+                role_map[header].append(status_col_idx)
+
+        for row in title_data:
+            if not row or not row[0].strip():
+                continue
+
+            chapter_number = row[0].strip()
+            chapter_status = row[-1] if len(row) > 0 else '❌'
+            
+            status_text = "✅ Опубліковано" if chapter_status == "✅" else "❌ Не опубліковано"
+            
+            response += f"*{chapter_number}* — {status_text}\n"
+
+        await update.message.reply_text(response, parse_mode="Markdown")
+
+    except Exception as e:
+        logger.error(f"Помилка при отриманні статусу: {e}")
+        await update.message.reply_text("⚠️ Виникла внутрішня помилка при отриманні статусу.")

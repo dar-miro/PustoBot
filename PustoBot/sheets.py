@@ -171,23 +171,31 @@ def update_title_table(title, chapter, role, nickname, titles_sheet_instance):
         logger.error("titles_sheet не ініціалізовано, неможливо оновити таблицю.")
         return False
 
+    data = []
     try:
-        all_values = titles_sheet_instance.get_all_values()
-        
+        data = titles_sheet_instance.get_all_values()
+    except Exception as e:
+        logger.error(f"Помилка при отриманні всіх значень: {e}")
+        return False
+
+    if not data:
+        logger.warning("Таблиця порожня або не вдалося отримати дані.")
+        return False
+
+    try:
         # Знаходимо блок для тайтлу
-        title_row_idx, header_row_idx = -1, -1
-        for i, row in enumerate(all_values):
+        title_row_idx = -1
+        for i, row in enumerate(data):
             if row and normalize_title(row[0]) == normalize_title(title):
                 title_row_idx = i
-                header_row_idx = i + 1
                 break
         
-        if title_row_idx == -1 or header_row_idx >= len(all_values):
+        if title_row_idx == -1:
             logger.warning(f"Тайтл '{title}' не знайдено для оновлення.")
             return False
 
-        headers_main = all_values[title_row_idx]
-        headers_sub = all_values[header_row_idx]
+        headers_main = data[title_row_idx]
+        headers_sub = data[title_row_idx + 1]
         
         # Знаходимо індекси колонок для ролі (чутливо до регістру)
         role_col_start_idx = -1
@@ -215,20 +223,20 @@ def update_title_table(title, chapter, role, nickname, titles_sheet_instance):
             logger.warning(f"Відсутні підколонки Нік, Дата, Статус для ролі '{target_role}'.")
             return False
 
-        nick_col_idx = role_col_start_idx + nick_col_offset + 1
-        date_col_idx = role_col_start_idx + date_col_offset + 1
-        status_col_idx = role_col_start_idx + status_col_offset + 1
+        nick_col_idx = role_col_start_idx + nick_col_offset
+        date_col_idx = role_col_start_idx + date_col_offset
+        status_col_idx = role_col_start_idx + status_col_offset
 
         # Шукаємо рядок з потрібним розділом
-        start_data_row_idx = header_row_idx + 1
-        for i, row in enumerate(all_values[start_data_row_idx:]):
+        start_data_row_idx = title_row_idx + 2
+        for i, row in enumerate(data[start_data_row_idx:]):
             actual_row_idx = start_data_row_idx + i
             if len(row) > 0 and str(row[0]).strip() == str(chapter).strip():
                 now = datetime.now().strftime("%Y-%m-%d")
                 
-                titles_sheet_instance.update_cell(actual_row_idx + 1, nick_col_idx, nickname)
-                titles_sheet_instance.update_cell(actual_row_idx + 1, date_col_idx, now)
-                titles_sheet_instance.update_cell(actual_row_idx + 1, status_col_idx, "✅")
+                titles_sheet_instance.update_cell(actual_row_idx + 1, nick_col_idx + 1, nickname)
+                titles_sheet_instance.update_cell(actual_row_idx + 1, date_col_idx + 1, now)
+                titles_sheet_instance.update_cell(actual_row_idx + 1, status_col_idx + 1, "✅")
                 return True
 
         logger.warning(f"Не знайдено розділ '{chapter}' для тайтлу '{title}' для оновлення.")
@@ -237,12 +245,63 @@ def update_title_table(title, chapter, role, nickname, titles_sheet_instance):
         logger.error(f"Помилка при оновленні комірки в Google Sheets: {e}")
         return False
 
+def get_title_data(title, titles_sheet_instance):
+    if titles_sheet_instance is None:
+        logger.error("titles_sheet не ініціалізовано, неможливо отримати дані.")
+        return None, None
+
+    data = []
+    try:
+        data = titles_sheet_instance.get_all_values()
+    except Exception as e:
+        logger.error(f"Помилка при отриманні всіх значень: {e}")
+        return None, None
+
+    if not data:
+        logger.warning("Таблиця порожня або не вдалося отримати дані.")
+        return None, None
+    
+    try:
+        title_row_idx = -1
+        for i, row in enumerate(data):
+            if row and normalize_title(row[0]) == normalize_title(title):
+                title_row_idx = i
+                break
+        
+        if title_row_idx == -1:
+            logger.warning(f"Тайтл '{title}' не знайдено.")
+            return None, None
+            
+        header_row_idx = title_row_idx + 1
+        start_data_row_idx = title_row_idx + 2
+
+        if start_data_row_idx >= len(data):
+            return [], data[header_row_idx]
+
+        return data[start_data_row_idx:], data[header_row_idx]
+
+    except Exception as e:
+        logger.error(f"Помилка при отриманні даних для тайтлу: {e}")
+        return None, None
+
+
 def get_title_blocks():
     if titles_sheet is None:
         logger.error("titles_sheet не ініціалізовано, неможливо отримати блоки тайтлів.")
         return []
+
+    data = []
     try:
         data = titles_sheet.get_all_values()
+    except Exception as e:
+        logger.error(f"Помилка при отриманні всіх значень: {e}")
+        return []
+    
+    if not data:
+        logger.warning("Таблиця порожня або не вдалося отримати дані.")
+        return []
+
+    try:
         blocks = []
         current_title = None
         start_row = None
@@ -284,9 +343,19 @@ def set_main_roles(title, roles_map):
     if titles_sheet is None:
         logger.error("titles_sheet не ініціалізовано, неможливо встановити основні ролі.")
         return False
+
+    data = []
     try:
         data = titles_sheet.get_all_values()
+    except Exception as e:
+        logger.error(f"Помилка при отриманні всіх значень: {e}")
+        return False
         
+    if not data:
+        logger.warning("Таблиця порожня або не вдалося отримати дані.")
+        return False
+
+    try:
         # Знаходимо рядок тайтлу для оновлення
         for i, row in enumerate(data):
             if row and len(row) > 0 and normalize_title(row[0]) == normalize_title(title):
