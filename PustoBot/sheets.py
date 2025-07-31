@@ -3,7 +3,7 @@ from datetime import datetime
 from oauth2client.service_account import ServiceAccountCredentials
 import re
 import logging
-import os # ДОДАНО: імпорт модуля os
+import os
 
 # Налаштування логування
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -18,7 +18,7 @@ log_sheet = None
 titles_sheet = None
 
 try:
-    # ВИПРАВЛЕНО: Використовуємо абсолютний шлях до файлу credentials.json
+    # Використовуємо абсолютний шлях до файлу credentials.json
     creds_path = os.path.join(os.path.dirname(__file__), '..', 'credentials.json')
     creds = ServiceAccountCredentials.from_json_keyfile_name(creds_path, scope)
     client = gspread.authorize(creds)
@@ -28,8 +28,6 @@ try:
     logger.info("Успішно підключено до Google Sheets.")
 except Exception as e:
     logger.error(f"Помилка підключення до Google Sheets: {e}")
-    # Важливо: якщо тут виникла помилка, об'єкти sheet будуть None.
-    # Обробники в main.py повинні це враховувати або перевіряти.
 
 # Відповідність ролей і колонок
 columns_by_role = {
@@ -108,7 +106,7 @@ def find_user_row_by_nick_or_tag(telegram_full_name, telegram_tag, desired_nick)
 
             if current_telegram_nick == telegram_full_name.strip().lower() or \
                current_nick == desired_nick.strip().lower() or \
-               (telegram_tag and current_tag == _format_telegram_tag(telegram_tag).strip().lower()): # ВИПРАВЛЕНО: порівнюємо форматований тег
+               (telegram_tag and current_tag == _format_telegram_tag(telegram_tag).strip().lower()):
                 return row_index, row
         return None, None
     except Exception as e:
@@ -118,11 +116,11 @@ def find_user_row_by_nick_or_tag(telegram_full_name, telegram_tag, desired_nick)
 def _format_telegram_tag(tag):
     """Додає '@' до тегу, якщо його немає, і повертає пустий рядок, якщо тег None або порожній."""
     if tag:
-        tag_str = str(tag).strip() # Перетворюємо на string та прибираємо пробіли
+        tag_str = str(tag).strip()
         if tag_str and not tag_str.startswith('@'):
             return '@' + tag_str
         return tag_str
-    return "" # Повертаємо пустий рядок, якщо тег None або порожній
+    return ""
 
 def update_user_row(row_index, telegram_full_name, telegram_tag, desired_nick, roles):
     user_sheet = get_user_sheet(main_spreadsheet)
@@ -176,8 +174,9 @@ def append_log_row(telegram_name, telegram_tag, title, chapter, position, nickna
         logger.error(f"Помилка при додаванні запису в лог: {e}")
         return False
 
-def update_title_table(title, chapter, role, nickname):
-    if titles_sheet is None:
+# ВИПРАВЛЕНО: додано параметр titles_sheet_instance
+def update_title_table(title, chapter, role, nickname, titles_sheet_instance):
+    if titles_sheet_instance is None:
         logger.error("titles_sheet не ініціалізовано, неможливо оновити таблицю.")
         return False
 
@@ -189,15 +188,15 @@ def update_title_table(title, chapter, role, nickname):
     blocks = get_title_blocks()
     for block_title, start_row, end_row in blocks:
         if normalize_title(block_title) == normalize_title(title):
-            rows = titles_sheet.get_all_values()[start_row:end_row]
+            rows = titles_sheet_instance.get_all_values()[start_row:end_row]
             for i, row in enumerate(rows):
                 if row and len(row) > 0 and chapter.strip() == row[0].strip():
                     actual_row = start_row + i + 1
                     now = datetime.now().strftime("%Y-%m-%d")
                     try:
-                        titles_sheet.update_acell(f"{role_columns['nick']}{actual_row}", nickname)
-                        titles_sheet.update_acell(f"{role_columns['date']}{actual_row}", now)
-                        titles_sheet.update_acell(f"{role_columns['check']}{actual_row}", "✅")
+                        titles_sheet_instance.update_acell(f"{role_columns['nick']}{actual_row}", nickname)
+                        titles_sheet_instance.update_acell(f"{role_columns['date']}{actual_row}", now)
+                        titles_sheet_instance.update_acell(f"{role_columns['check']}{actual_row}", "✅")
                         return True
                     except Exception as e:
                         logger.error(f"Помилка при оновленні комірки в Google Sheets: {e}")
@@ -262,10 +261,9 @@ def set_main_roles(title, roles_map):
         for i, row in enumerate(data):
             if normalize_title(row[0]) == normalize_title(title):
                 row_num = i + 1
-                for role, nicknames_list in roles_map.items(): # Тепер nicknames_list це список
+                for role, nicknames_list in roles_map.items():
                     col_idx = main_role_cols.get(role)
                     if col_idx != -1 and col_idx is not None:
-                        # Об'єднуємо ніки у рядок, розділяючи комою
                         nicknames_str = ", ".join(nicknames_list)
                         titles_sheet.update_cell(row_num, col_idx + 1, nicknames_str)
                 return True
