@@ -4,18 +4,18 @@ from oauth2client.service_account import ServiceAccountCredentials
 import re
 import logging
 import os
+from collections import defaultdict
 
-# Налаштування логування
+# --- Налаштування та Ініціалізація ---
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-# Авторизація
 scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
-
 client = None
 main_spreadsheet = None
 log_sheet = None
 titles_sheet = None
+COLUMN_MAP = {} # Глобальна карта колонок
 
 try:
     creds_path = os.path.join(os.path.dirname(__file__), '..', 'credentials.json')
@@ -28,135 +28,221 @@ try:
 except Exception as e:
     logger.error(f"Помилка підключення до Google Sheets: {e}")
 
-def get_title_sheet():
+# --- Нова логіка ініціалізації та пошуку ---
+
+def initialize_header_map():
+    """
+    Читає перші два рядки таблиці 'Тайтли' і створює глобальну карту колонок.
+    Ця функція має викликатись один раз при старті бота.
+    """
     if titles_sheet is None:
-        logger.error("titles_sheet не ініціалізовано. Можливо, проблема з credentials.json або доступом.")
-    return titles_sheet
+        logger.error("Аркуш 'Тайтли' не ініціалізовано. Неможливо створити карту колонок.")
+        return
+
+    try:
+        header_rows = titles_sheet.get('A1:O2') # Отримуємо перші 2 рядки до колонки O
+        main_headers = header_rows[0]
+        sub_headers = header_rows[1]
+        
+        global COLUMN_MAP
+        COLUMN_MAP.clear()
+        
+        current_main_header = None
+        # defaultdict створює вкладений словник, якщо ключ ще не існує
+        temp_map = defaultdict(dict)
+
+        for i, main_header_val in enumerate(main_headers):
+            # Якщо значення в основному заголовку не порожнє, встановлюємо його як поточний
+            if main_header_val.strip():
+                current_main_header = main_header_val.strip()
+            
+            # Якщо є поточний основний заголовок і підзаголовок не порожній
+            if current_main_header and sub_headers[i].strip():
+                # gspread використовує 1-індексацію, а Python 0-індексацію
+                col_letter = gspread.utils.rowcol_to_a1(1, i + 1)[:-1]
+                # Зберігаємо нормалізовані назви для легкого доступу
+                temp_map[normalize_title(current_main_header)][normalize_title(sub_headers[i])] = i + 1 # Зберігаємо 1-based індекс колонки
+
+        COLUMN_MAP = dict(temp_map)
+        logger.info(f"Карту колонок успішно створено: {COLUMN_MAP}")
+
+    except Exception as e:
+        logger.error(f"Помилка при ініціалізації карти колонок: {e}")
+
+
+def find_title_block(title, all_values):
+    """
+    Знаходить початковий та кінцевий індекс рядка для блоку тайтлу.
+    Повертає (start_row_idx, end_row_idx) або (None, None).
+    """
+    normalized_title_to_find = normalize_title(title)
+    title_start_idx = -1
+    title_end_idx = -1
+
+    # Шукаємо початок блоку
+    for i, row in enumerate(all_values):
+        if row and normalize_title(row[0]) == normalized_title_to_find:
+            title_start_idx = i
+            break
+    
+    if title_start_idx == -1:
+        return None, None
+
+    # Шукаємо кінець блоку (наступний тайтл або кінець даних)
+    title_end_idx = len(all_values)
+    for i, row in enumerate(all_values[title_start_idx + 1:]):
+        # Якщо в першій колонці є значення і в другій пусто, це, ймовірно, новий тайтл
+        if row and row[0].strip() and (len(row) == 1 or not row[1].strip()):
+            title_end_idx = title_start_idx + i + 1
+            break
+            
+    return title_start_idx, title_end_idx
+
+
+def update_title_table(title, chapter, role, nickname):
+    """
+    Оновлює комірки для конкретного розділу та ролі, використовуючи глобальну карту колонок.
+    """
+    if not COLUMN_MAP:
+        logger.error("Карта колонок порожня. Оновлення неможливе.")
+        return False
+
+    try:
+        all_values = titles_sheet.get_all_values()
+        start_idx, end_idx = find_title_block(title, all_values)
+
+        if start_idx is None:
+            logger.warning(f"Тайтл '{title}' не знайдено.")
+            return False
+
+        # Нормалізуємо роль для пошуку в карті
+        normalized_role = normalize_title(role)
+        # Мапінг варіацій ролей на канонічні назви з карти
+        role_map = {"клін": "клін", "переклад": "переклад", "тайп": "тайп", "ред": "редакт", "редакт": "редакт"}
+        canonical_role = role_map.get(normalized_role)
+        
+        if not canonical_role or canonical_role not in COLUMN_MAP:
+            logger.warning(f"Роль '{role}' не знайдено в карті колонок.")
+            return False
+            
+        role_columns = COLUMN_MAP[canonical_role]
+        nick_col_idx = role_columns.get('нік') or role_columns.get('shed') # 'shed' для сумісності
+        date_col_idx = role_columns.get('дата')
+        status_col_idx = role_columns.get('статус')
+
+        if not nick_col_idx or not date_col_idx or not status_col_idx:
+            logger.warning(f"Для ролі '{role}' відсутні необхідні колонки (нік/дата/статус) в карті.")
+            return False
+        
+        # Шукаємо розділ в межах блоку
+        for i in range(start_idx, end_idx):
+            row = all_values[i]
+            # Колонка B (індекс 1) - це номер розділу
+            if len(row) > 1 and str(row[1]).strip() == str(chapter).strip():
+                row_to_update_idx = i + 1 # gspread використовує 1-based індексацію
+                now_date = datetime.now().strftime("%d.%m.%Y") # Формат як у таблиці
+                
+                # Створюємо список для пакетного оновлення
+                updates = [
+                    {'range': gspread.utils.rowcol_to_a1(row_to_update_idx, nick_col_idx), 'values': [[nickname]]},
+                    {'range': gspread.utils.rowcol_to_a1(row_to_update_idx, date_col_idx), 'values': [[now_date]]},
+                    {'range': gspread.utils.rowcol_to_a1(row_to_update_idx, status_col_idx), 'values': [["✅"]]},
+                ]
+                titles_sheet.batch_update(updates)
+                logger.info(f"Оновлено тайтл '{title}', розділ '{chapter}', роль '{role}'.")
+                return True
+
+        logger.warning(f"Не знайдено розділ '{chapter}' для тайтлу '{title}'.")
+        return False
+
+    except Exception as e:
+        logger.error(f"Помилка при оновленні таблиці: {e}")
+        return False
+
+
+def set_publish_status(title, chapter):
+    """Встановлює статус 'Опубліковано' для розділу."""
+    if not COLUMN_MAP:
+        logger.error("Карта колонок порожня. Оновлення статусу публікації неможливе.")
+        return "error"
+        
+    try:
+        all_values = titles_sheet.get_all_values()
+        start_idx, end_idx = find_title_block(title, all_values)
+
+        if start_idx is None:
+            logger.warning(f"Тайтл '{title}' не знайдено.")
+            return "not_found"
+
+        publish_col_idx = COLUMN_MAP.get('дата дедлайну', {}).get('статус')
+        if not publish_col_idx:
+            logger.error("Не вдалося знайти колонку статусу публікації в карті.")
+            return "error"
+
+        for i in range(start_idx, end_idx):
+            row = all_values[i]
+            if len(row) > 1 and str(row[1]).strip() == str(chapter).strip():
+                row_to_update_idx = i + 1
+                titles_sheet.update_cell(row_to_update_idx, publish_col_idx, "✅")
+                # Повертаємо оригінальну назву тайтлу з таблиці
+                original_title = all_values[start_idx][0]
+                return "success", original_title
+
+        logger.warning(f"Не знайдено розділ '{chapter}' для тайтлу '{title}' для публікації.")
+        return "chapter_not_found"
+
+    except Exception as e:
+        logger.error(f"Помилка при оновленні статусу публікації: {e}")
+        return "error"
+
+
+def get_title_status_data(title):
+    """Отримує дані для звіту по статусу, використовуючи нову логіку."""
+    try:
+        all_values = titles_sheet.get_all_values()
+        start_idx, end_idx = find_title_block(title, all_values)
+
+        if start_idx is None:
+            logger.warning(f"Тайтл '{title}' не знайдено для отримання статусу.")
+            return None, None
+
+        title_data_rows = all_values[start_idx + 2 : end_idx] # Дані починаються через 2 рядки
+        original_title = all_values[start_idx][0]
+        
+        # Створюємо структурований звіт
+        status_report = []
+        publish_status_col_idx = COLUMN_MAP.get('дата дедлайну', {}).get('статус')
+
+        for row in title_data_rows:
+            if not row or not row[1].strip(): # Пропускаємо пусті рядки або без номера розділу
+                continue
+            
+            chapter_number = row[1].strip()
+            # Індекс в Python 0-based, тому віднімаємо 1
+            is_published = False
+            if publish_status_col_idx and len(row) >= publish_status_col_idx:
+                is_published = (row[publish_status_col_idx - 1] == "✅")
+            
+            status_report.append({
+                "chapter": chapter_number,
+                "published": is_published
+            })
+            
+        return original_title, status_report
+
+    except Exception as e:
+        logger.error(f"Помилка при отриманні даних статусу для '{title}': {e}")
+        return None, None
+
+# --- Допоміжні та старі функції (без змін або з мінімальними змінами) ---
 
 def normalize_title(t):
-    if not isinstance(t, str):
-        return ""
+    if not isinstance(t, str): return ""
     return re.sub(r'\\s+', ' ', t.strip().lower().replace("’", "'"))
-
-def get_user_sheet(main_sheet_instance):
-    if main_sheet_instance is None:
-        logger.error("main_sheet_instance не передано для get_user_sheet.")
-        return None
-    try:
-        return main_sheet_instance.worksheet("Користувачі")
-    except gspread.exceptions.WorksheetNotFound:
-        logger.warning("Аркуш 'Користувачі' не знайдено, створюю новий.")
-        new_sheet = main_sheet_instance.add_worksheet("Користувачі", rows=100, cols=4)
-        new_sheet.append_row(["Telegram-нік", "Теґ", "Нік", "Ролі"])
-        return new_sheet
-    except Exception as e:
-        logger.error(f"Помилка при отриманні або створенні аркуша 'Користувачі': {e}")
-        return None
-
-def load_nickname_map():
-    user_sheet = get_user_sheet(main_spreadsheet)
-    if user_sheet is None:
-        return {}
-
-    try:
-        data = user_sheet.get_all_records()
-        nickname_map = {row["Telegram-нік"]: row["Нік"] for row in data if "Telegram-нік" in row and "Нік" in row}
-        return nickname_map
-    except Exception as e:
-        logger.error(f"Помилка при завантаженні мапи нікнеймів: {e}")
-        return {}
-
-def find_user_row_by_nick_or_tag(telegram_full_name, telegram_tag, desired_nick):
-    user_sheet = get_user_sheet(main_spreadsheet)
-    if user_sheet is None:
-        logger.error("user_sheet не ініціалізовано, неможливо здійснити пошук.")
-        return None, None
-    
-    try:
-        all_values = user_sheet.get_all_values()
-        if not all_values or len(all_values) < 2:
-            return None, None
-        
-        headers = all_values[0]
-        try:
-            telegram_nick_col_idx = headers.index("Telegram-нік")
-            tag_col_idx = headers.index("Теґ")
-            nick_col_idx = headers.index("Нік")
-        except ValueError as e:
-            logger.error(f"Відсутня необхідна колонка в аркуші 'Користувачі': {e}. Заголовки: {headers}")
-            return None, None
-
-        for i, row in enumerate(all_values[1:]):
-            row_index = i + 2
-            
-            if len(row) <= max(telegram_nick_col_idx, tag_col_idx, nick_col_idx):
-                continue
-
-            current_telegram_nick = row[telegram_nick_col_idx].strip().lower() if len(row) > telegram_nick_col_idx else ""
-            current_tag = row[tag_col_idx].strip().lower() if len(row) > tag_col_idx else ""
-            current_nick = row[nick_col_idx].strip().lower() if len(row) > nick_col_idx else ""
-
-            if current_telegram_nick == telegram_full_name.strip().lower() or \
-               current_nick == desired_nick.strip().lower() or \
-               (telegram_tag and current_tag == _format_telegram_tag(telegram_tag).strip().lower()):
-                return row_index, row
-        return None, None
-    except Exception as e:
-        logger.error(f"Помилка при пошуку користувача за ніком або тегом: {e}")
-        return None, None
-
-def _format_telegram_tag(tag):
-    """Додає '@' до тегу, якщо його немає, і повертає пустий рядок, якщо тег None або порожній."""
-    if tag:
-        tag_str = str(tag).strip()
-        if tag_str and not tag_str.startswith('@'):
-            return '@' + tag_str
-        return tag_str
-    return ""
-
-def update_user_row(row_index, telegram_full_name, telegram_tag, desired_nick, roles):
-    user_sheet = get_user_sheet(main_spreadsheet)
-    if user_sheet is None:
-        logger.error("user_sheet не ініціалізовано, неможливо оновити рядок.")
-        return False
-    
-    try:
-        headers = user_sheet.row_values(1)
-        required_cols = ["Telegram-нік", "Теґ", "Нік", "Ролі"]
-        for col in required_cols:
-            if col not in headers:
-                logger.error(f"Відсутня необхідна колонка '{col}' в аркуші 'Користувачі'. Заголовки: {headers}")
-                return False
-
-        telegram_nick_col_idx = headers.index("Telegram-нік") + 1
-        tag_col_idx = headers.index("Теґ") + 1
-        nick_col_idx = headers.index("Нік") + 1
-        roles_col_idx = headers.index("Ролі") + 1
-
-        user_sheet.update_cell(row_index, telegram_nick_col_idx, telegram_full_name)
-        user_sheet.update_cell(row_index, tag_col_idx, _format_telegram_tag(telegram_tag))
-        user_sheet.update_cell(row_index, nick_col_idx, desired_nick)
-        user_sheet.update_cell(row_index, roles_col_idx, roles)
-        return True
-    except Exception as e:
-        logger.error(f"Помилка при оновленні рядка користувача: {e}")
-        return False
-
-def append_user_row(telegram_full_name, telegram_tag, desired_nick, roles):
-    user_sheet = get_user_sheet(main_spreadsheet)
-    if user_sheet is None:
-        logger.error("user_sheet не ініціалізовано, неможливо додати рядок.")
-        return False
-    try:
-        user_sheet.append_row([telegram_full_name, _format_telegram_tag(telegram_tag), desired_nick, roles])
-        return True
-    except Exception as e:
-        logger.error(f"Помилка при додаванні нового рядка користувача: {e}")
-        return False
 
 def append_log_row(telegram_name, telegram_tag, title, chapter, position, nickname):
     if log_sheet is None:
-        logger.error("log_sheet не ініціалізовано, неможливо додати запис у лог.")
+        logger.error("log_sheet не ініціалізовано.")
         return False
     try:
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -166,235 +252,117 @@ def append_log_row(telegram_name, telegram_tag, title, chapter, position, nickna
         logger.error(f"Помилка при додаванні запису в лог: {e}")
         return False
 
-def update_title_table(title, chapter, role, nickname, titles_sheet_instance):
-    if titles_sheet_instance is None:
-        logger.error("titles_sheet не ініціалізовано, неможливо оновити таблицю.")
-        return False
-
-    data = []
+# Функції для /register залишаються без змін, оскільки вони працюють з іншим аркушем
+def get_user_sheet(main_sheet_instance):
+    if main_sheet_instance is None: return None
     try:
-        data = titles_sheet_instance.get_all_values()
+        return main_sheet_instance.worksheet("Користувачі")
+    except gspread.exceptions.WorksheetNotFound:
+        new_sheet = main_sheet_instance.add_worksheet("Користувачі", rows=100, cols=4)
+        new_sheet.append_row(["Telegram-нік", "Теґ", "Нік", "Ролі"])
+        return new_sheet
     except Exception as e:
-        logger.error(f"Помилка при отриманні всіх значень: {e}")
-        return False
+        logger.error(f"Помилка при отриманні аркуша 'Користувачі': {e}")
+        return None
 
-    if not data:
-        logger.warning("Таблиця порожня або не вдалося отримати дані.")
-        return False
-
+def load_nickname_map():
+    user_sheet = get_user_sheet(main_spreadsheet)
+    if user_sheet is None: return {}
     try:
-        # Знаходимо блок для тайтлу
-        title_row_idx = -1
-        for i, row in enumerate(data):
-            if row and normalize_title(row[0]) == normalize_title(title):
-                title_row_idx = i
-                break
-        
-        if title_row_idx == -1:
-            logger.warning(f"Тайтл '{title}' не знайдено для оновлення.")
-            return False
-
-        headers_main = data[title_row_idx]
-        headers_sub = data[title_row_idx + 1]
-        
-        # Знаходимо індекси колонок для ролі (чутливо до регістру)
-        role_col_start_idx = -1
-        role_map = {
-            "клін": "Клін", "переклад": "Переклад",
-            "тайп": "Тайп", "ред": "Редакт", "редакт": "Редакт"
-        }
-        target_role = role_map.get(role.lower())
-        if target_role:
-            try:
-                role_col_start_idx = headers_main.index(target_role)
-            except ValueError:
-                logger.warning(f"Не знайдено колонку для ролі '{target_role}'. Заголовки: {headers_main}")
-                return False
-        else:
-            logger.warning(f"Невідома роль для оновлення: {role}")
-            return False
-
-        # Знаходимо індекси підколонок
-        try:
-            nick_col_offset = headers_sub[role_col_start_idx:].index("Нік")
-            date_col_offset = headers_sub[role_col_start_idx:].index("Дата")
-            status_col_offset = headers_sub[role_col_start_idx:].index("Статус")
-        except ValueError:
-            logger.warning(f"Відсутні підколонки Нік, Дата, Статус для ролі '{target_role}'.")
-            return False
-
-        nick_col_idx = role_col_start_idx + nick_col_offset
-        date_col_idx = role_col_start_idx + date_col_offset
-        status_col_idx = role_col_start_idx + status_col_offset
-
-        # Шукаємо рядок з потрібним розділом
-        start_data_row_idx = title_row_idx + 2
-        for i, row in enumerate(data[start_data_row_idx:]):
-            actual_row_idx = start_data_row_idx + i
-            if len(row) > 0 and str(row[0]).strip() == str(chapter).strip():
-                now = datetime.now().strftime("%Y-%m-%d")
-                
-                titles_sheet_instance.update_cell(actual_row_idx + 1, nick_col_idx + 1, nickname)
-                titles_sheet_instance.update_cell(actual_row_idx + 1, date_col_idx + 1, now)
-                titles_sheet_instance.update_cell(actual_row_idx + 1, status_col_idx + 1, "✅")
-                return True
-
-        logger.warning(f"Не знайдено розділ '{chapter}' для тайтлу '{title}' для оновлення.")
-        return False
+        data = user_sheet.get_all_records()
+        return {row["Telegram-нік"]: row["Нік"] for row in data if "Telegram-нік" in row and "Нік" in row}
     except Exception as e:
-        logger.error(f"Помилка при оновленні комірки в Google Sheets: {e}")
-        return False
+        logger.error(f"Помилка при завантаженні мапи нікнеймів: {e}")
+        return {}
 
-def get_title_data(title, titles_sheet_instance):
-    if titles_sheet_instance is None:
-        logger.error("titles_sheet не ініціалізовано, неможливо отримати дані.")
+def find_user_row_by_nick_or_tag(telegram_full_name, telegram_tag, desired_nick):
+    user_sheet = get_user_sheet(main_spreadsheet)
+    if user_sheet is None: return None, None
+    try:
+        all_values = user_sheet.get_all_values()
+        if not all_values or len(all_values) < 2: return None, None
+        headers = all_values[0]
+        telegram_nick_col_idx = headers.index("Telegram-нік")
+        tag_col_idx = headers.index("Теґ")
+        nick_col_idx = headers.index("Нік")
+        for i, row in enumerate(all_values[1:]):
+            row_index = i + 2
+            if len(row) <= max(telegram_nick_col_idx, tag_col_idx, nick_col_idx): continue
+            current_telegram_nick = row[telegram_nick_col_idx].strip().lower()
+            current_tag = row[tag_col_idx].strip().lower()
+            current_nick = row[nick_col_idx].strip().lower()
+            if (current_telegram_nick == telegram_full_name.strip().lower() or
+                current_nick == desired_nick.strip().lower() or
+                (telegram_tag and current_tag == f'@{telegram_tag}'.lower())):
+                return row_index, row
+        return None, None
+    except Exception as e:
+        logger.error(f"Помилка при пошуку користувача: {e}")
         return None, None
 
-    data = []
+def _format_telegram_tag(tag):
+    if tag:
+        tag_str = str(tag).strip()
+        return '@' + tag_str if not tag_str.startswith('@') else tag_str
+    return ""
+
+def update_user_row(row_index, telegram_full_name, telegram_tag, desired_nick, roles):
+    user_sheet = get_user_sheet(main_spreadsheet)
+    if user_sheet is None: return False
     try:
-        data = titles_sheet_instance.get_all_values()
+        user_sheet.update(f'A{row_index}:D{row_index}', [[telegram_full_name, _format_telegram_tag(telegram_tag), desired_nick, roles]])
+        return True
     except Exception as e:
-        logger.error(f"Помилка при отриманні всіх значень: {e}")
-        return None, None
+        logger.error(f"Помилка при оновленні рядка користувача: {e}")
+        return False
 
-    if not data:
-        logger.warning("Таблиця порожня або не вдалося отримати дані.")
-        return None, None
-    
+def append_user_row(telegram_full_name, telegram_tag, desired_nick, roles):
+    user_sheet = get_user_sheet(main_spreadsheet)
+    if user_sheet is None: return False
     try:
-        title_row_idx = -1
-        for i, row in enumerate(data):
-            if row and normalize_title(row[0]) == normalize_title(title):
-                title_row_idx = i
-                break
-        
-        if title_row_idx == -1:
-            logger.warning(f"Тайтл '{title}' не знайдено.")
-            return None, None
-            
-        header_row_idx = title_row_idx + 1
-        start_data_row_idx = title_row_idx + 2
-
-        if start_data_row_idx >= len(data):
-            return [], data[header_row_idx]
-
-        return data[start_data_row_idx:], data[header_row_idx]
-
+        user_sheet.append_row([telegram_full_name, _format_telegram_tag(telegram_tag), desired_nick, roles])
+        return True
     except Exception as e:
-        logger.error(f"Помилка при отриманні даних для тайтлу: {e}")
-        return None, None
-
-
-def get_title_blocks():
-    if titles_sheet is None:
-        logger.error("titles_sheet не ініціалізовано, неможливо отримати блоки тайтлів.")
-        return []
-
-    data = []
-    try:
-        data = titles_sheet.get_all_values()
-    except Exception as e:
-        logger.error(f"Помилка при отриманні всіх значень: {e}")
-        return []
-    
-    if not data:
-        logger.warning("Таблиця порожня або не вдалося отримати дані.")
-        return []
-
-    try:
-        blocks = []
-        current_title = None
-        start_row = None
-        for i, row in enumerate(data):
-            # Якщо перший елемент заповнений, а другий порожній, це може бути тайтл
-            if row and row[0].strip() and (len(row) <= 1 or not row[1].strip()):
-                if current_title is None:
-                    current_title = row[0].strip()
-                    # Дані починаються через 2 рядки (після тайтлу і заголовків)
-                    start_row = i + 2
-            # Якщо поточний рядок порожній і ми в блоці, то це кінець блоку
-            elif not any(row) and current_title is not None:
-                blocks.append((current_title, start_row, i))
-                current_title = None
-        # Якщо файл закінчується з блоком, додаємо його
-        if current_title:
-            blocks.append((current_title, start_row, len(data)))
-        return blocks
-    except Exception as e:
-        logger.error(f"Помилка при отриманні блоків тайтлів: {e}")
-        return []
-
-def get_full_title_data():
-    if titles_sheet is None:
-        logger.error("titles_sheet не ініціалізовано, неможливо отримати повні дані тайтлів.")
-        return []
-    try:
-        return titles_sheet.get_all_values()
-    except Exception as e:
-        logger.error(f"Помилка при отриманні всіх значень з аркуша Тайтли: {e}")
-        return []
+        logger.error(f"Помилка при додаванні рядка користувача: {e}")
+        return False
 
 def set_main_roles(title, roles_map):
-    """
-    Встановлює основні ролі для тайтлу.
-    roles_map: словник {role: [nick1, nick2, ...]}
-    Ніки для однієї ролі будуть об'єднані через кому.
-    """
-    if titles_sheet is None:
-        logger.error("titles_sheet не ініціалізовано, неможливо встановити основні ролі.")
-        return False
-
-    data = []
-    try:
-        data = titles_sheet.get_all_values()
-    except Exception as e:
-        logger.error(f"Помилка при отриманні всіх значень: {e}")
+    """Встановлює основні ролі для тайтлу. Логіка також оновлена для використання find_title_block."""
+    if not COLUMN_MAP:
+        logger.error("Карта колонок порожня. Встановлення ролей неможливе.")
         return False
         
-    if not data:
-        logger.warning("Таблиця порожня або не вдалося отримати дані.")
-        return False
-
     try:
-        # Знаходимо рядок тайтлу для оновлення
-        for i, row in enumerate(data):
-            if row and len(row) > 0 and normalize_title(row[0]) == normalize_title(title):
-                # Рядок з тайтлом - це i, а заголовки ролей - i+1
-                headers_main = data[i]
-                
-                role_map = {
-                    "клін": "Клін", "переклад": "Переклад",
-                    "тайп": "Тайп", "редакт": "Редакт"
-                }
+        all_values = titles_sheet.get_all_values()
+        start_idx, _ = find_title_block(title, all_values)
 
-                # Оновлюємо колонки для кожної ролі
-                headers_sub = data[i+1] if i + 1 < len(data) else []
-                
-                for role, nicknames_list in roles_map.items():
-                    target_role = role_map.get(role)
-                    if not target_role:
-                        logger.warning(f"Невідома роль для встановлення основних ролей: {role}")
-                        continue
-                    
-                    try:
-                        col_idx_main = headers_main.index(target_role)
-                    except ValueError:
-                        logger.warning(f"Не знайдено колонку для ролі '{target_role}'.")
-                        continue
-                    
-                    try:
-                        # Шукаємо 'Нік' в підзаголовках, починаючи з індексу основної ролі
-                        sub_header_slice = headers_sub[col_idx_main:]
-                        nick_offset = sub_header_slice.index('Нік')
-                        nick_col_idx = col_idx_main + nick_offset
-                        
-                        nicknames_str = ", ".join(nicknames_list)
-                        titles_sheet.update_cell(i + 2, nick_col_idx + 1, nicknames_str)
-                    except ValueError:
-                        logger.warning(f"Не знайдено підколонку 'Нік' для ролі '{target_role}'")
-                return True
-        logger.warning(f"Тайтл '{title}' не знайдено для встановлення основних ролей.")
+        if start_idx is None:
+            logger.warning(f"Тайтл '{title}' не знайдено для встановлення ролей.")
+            return False
+
+        # Ролі встановлюються у підзаголовку, який є наступним після рядка з назвою тайтлу
+        header_row_to_update_idx = start_idx + 2 # 1-based index
+        
+        updates = []
+        role_mapping_canon = {"клін": "клін", "переклад": "переклад", "тайп": "тайп", "редакт": "редакт"}
+
+        for role, nicks_list in roles_map.items():
+            canonical_role = role_mapping_canon.get(role.lower())
+            if canonical_role and canonical_role in COLUMN_MAP:
+                nick_col_idx = COLUMN_MAP[canonical_role].get('shed') or COLUMN_MAP[canonical_role].get('нік')
+                if nick_col_idx:
+                    nicknames_str = ", ".join(nicks_list)
+                    updates.append({
+                        'range': gspread.utils.rowcol_to_a1(header_row_to_update_idx, nick_col_idx),
+                        'values': [[nicknames_str]]
+                    })
+        
+        if updates:
+            titles_sheet.batch_update(updates)
+            logger.info(f"Основні ролі для тайтлу '{title}' оновлено.")
+            return True
         return False
+        
     except Exception as e:
         logger.error(f"Помилка при встановленні основних ролей: {e}")
         return False

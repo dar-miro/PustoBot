@@ -11,7 +11,7 @@ from thread import get_thread_handler
 from register import get_register_handler
 from publish import publish_command
 from status import status_command
-from PustoBot.sheets import main_spreadsheet, log_sheet, titles_sheet # ВИПРАВЛЕНО: імпортуємо specific sheets
+from .PustoBot.sheets import main_spreadsheet, initialize_header_map # Додано initialize_header_map
 
 # Налаштування логування
 logging.basicConfig(
@@ -19,39 +19,42 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Обгортки для передачі об'єкта `main_spreadsheet` з sheets.py
+# Обгортки для команд (тепер вони простіші)
 async def message_handler_wrapper(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # handle_message працює з log_sheet
-    await handle_message(update, context, titles_sheet) # ВИПРАВЛЕНО: передаємо titles_sheet для парсингу
+    await handle_message(update, context)
 
 async def add_command_wrapper(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # ВИПРАВЛЕНО: передаємо titles_sheet для оновлення таблиці
-    await add_command(update, context, titles_sheet)
+    await add_command(update, context)
 
 async def status_command_wrapper(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # ВИПРАВЛЕНО: передаємо titles_sheet для отримання статусу
-    await status_command(update, context, titles_sheet)
+    await status_command(update, context)
 
 async def publish_command_wrapper(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # ВИПРАВЛЕНО: передаємо titles_sheet для публікації
-    await publish_command(update, context, titles_sheet)
+    await publish_command(update, context)
 
-# Функції для вебхуків (як у вашому прикладі)
+# Функції для вебхуків
 async def handle_ping(request):
     return web.Response(text="I'm alive!")
 
 async def handle_webhook(request):
     app = request.app['bot_app']
-    update = await request.json()
-    telegram_update = Update.de_json(update, app.bot)
-    await app.update_queue.put(telegram_update)
-    return web.Response(text='OK')
+    try:
+        update_json = await request.json()
+        telegram_update = Update.de_json(update_json, app.bot)
+        await app.update_queue.put(telegram_update)
+        return web.Response(text='OK')
+    except Exception as e:
+        logger.error(f"Error handling webhook: {e}")
+        return web.Response(text='Error', status=500)
 
 async def main():
     TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
     if not TOKEN:
         logger.error("TELEGRAM_BOT_TOKEN environment variable not set.")
         return
+
+    # >>> ВАЖЛИВО: Ініціалізуємо карту колонок при старті <<<
+    initialize_header_map()
 
     # Ініціалізація ApplicationBuilder
     bot_app = ApplicationBuilder().token(TOKEN).build()
@@ -62,10 +65,7 @@ async def main():
     bot_app.add_handler(CommandHandler("status", status_command_wrapper))
     bot_app.add_handler(CommandHandler("publish", publish_command_wrapper))
     
-    # Реєстрація ConversationHandler для /thread
     bot_app.add_handler(get_thread_handler())
-
-    # Реєстрація ConversationHandler для /register
     bot_app.add_handler(get_register_handler(main_spreadsheet))
 
     # Обробник для звичайних повідомлень
@@ -77,10 +77,15 @@ async def main():
         )
     )
 
-    # Ініціалізація та запуск бота (для використання з вебхуками)
+    # Ініціалізація та запуск бота для вебхуків
     await bot_app.initialize()
     await bot_app.start()
-
+    
+    # Потрібно переконатися, що у `bot_app` є черга оновлень
+    if not hasattr(bot_app, 'update_queue'):
+        logger.error("bot_app has no update_queue attribute!")
+        return
+        
     aio_app = web.Application()
     aio_app['bot_app'] = bot_app
     aio_app.add_routes([
@@ -88,15 +93,13 @@ async def main():
         web.post('/webhook', handle_webhook),
     ])
 
-    # Запуск aiohttp сервера
     runner = web.AppRunner(aio_app)
     await runner.setup()
     site = web.TCPSite(runner, '0.0.0.0', int(os.environ.get("PORT", 8080)))
     await site.start()
+    logger.info(f"Bot started and listening on port {os.environ.get('PORT', 8080)}")
 
-    # Keep the bot running indefinitely
     await asyncio.Event().wait()
-
 
 if __name__ == "__main__":
     asyncio.run(main())
