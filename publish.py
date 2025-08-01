@@ -1,9 +1,9 @@
 import logging
+import re
 from telegram import Update
 from telegram.ext import ContextTypes
-from .PustoBot.sheets import set_publish_status, ROLE_MAPPING
+from PustoBot.sheets import set_publish_status, ROLE_MAPPING
 from thread import get_thread_title
-import re
 
 logger = logging.getLogger(__name__)
 
