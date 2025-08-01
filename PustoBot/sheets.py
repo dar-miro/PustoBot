@@ -39,7 +39,7 @@ def initialize_header_map():
         return
     
     try:
-        header_rows = titles_sheet.get('A1:O4', value_render_option='UNFORMATTED_VALUE')
+        header_rows = titles_sheet.get('A1:AZ4', value_render_option='UNFORMATTED_VALUE')
         if len(header_rows) < 4:
             logger.error("Недостатньо рядків для ініціалізації карти колонок. Перевірте структуру таблиці.")
             return
@@ -53,27 +53,35 @@ def initialize_header_map():
         col_index = 1
         main_role = None
         
-        for i in range(len(main_headers)):
-            if main_headers[i] and main_headers[i] != "":
-                main_role = main_headers[i]
+        # Визначаємо максимальну кількість колонок серед усіх рядків заголовків
+        max_cols = max(len(main_headers), len(sub_headers), len(role_nicks_headers))
+
+        for i in range(max_cols):
+            # Безпечно отримуємо значення з кожного рядка, уникаючи 'list index out of range'
+            main_header = main_headers[i] if i < len(main_headers) else ""
+            sub_header = sub_headers[i] if i < len(sub_headers) else ""
+            role_nick_header = role_nicks_headers[i] if i < len(role_nicks_headers) else ""
+
+            if main_header and main_header != "":
+                main_role = main_header
                 
             if main_role:
-                if sub_headers[i] == "Дата":
+                if sub_header == "Дата":
                     COLUMN_MAP[f"{main_role}-Дата"] = col_index
-                elif sub_headers[i] == "Статус":
+                elif sub_header == "Статус":
                     COLUMN_MAP[f"{main_role}-Статус"] = col_index
-                elif role_nicks_headers[i] and role_nicks_headers[i] != "":
+                elif role_nick_header and role_nick_header != "":
                     # Це колонка ніків під роллю
-                    COLUMN_MAP[f"{main_role}-{role_nicks_headers[i]}"] = col_index
+                    COLUMN_MAP[f"{main_role}-{role_nick_header}"] = col_index
                 
             # Обробка колонок Тайтли та Розділ
-            if header_rows[3][i] == "Розділ №":
+            if role_nick_header == "Розділ №":
                 COLUMN_MAP["Розділ №"] = col_index
-            if header_rows[0][i] == "Тайтли":
+            if main_header == "Тайтли":
                 COLUMN_MAP["Тайтли"] = col_index
-            if header_rows[2][i] == "Дата дедлайну":
+            if sub_header == "Дата дедлайну":
                 COLUMN_MAP["Дата дедлайну"] = col_index
-            if header_rows[2][i] == "Статус" and header_rows[0][i] == "Публікація":
+            if sub_header == "Статус" and main_header == "Публікація":
                 COLUMN_MAP["Публікація-Статус"] = col_index
             
             col_index += 1
@@ -136,9 +144,7 @@ def find_title_block(title_name):
         logger.warning(f"Тайтл '{title_name}' не знайдено.")
         return None, None
     
-    # Відступ у 4 рядки до даних, 4й рядок це вже розділи
     end_row = start_row + 4
-    # знаходимо кінець блоку тайтлу (порожній рядок)
     for i in range(start_row + 5, len(title_list) + 1):
         if i > len(title_list) or not title_list[i-1]:
             end_row = i - 1
@@ -160,12 +166,15 @@ def find_cell_by_role(title_name, chapter_number, role):
         return None
 
     row_to_update_index = None
-    # Шукаємо в діапазоні, починаючи з рядка з номером розділу
-    chapter_values = titles_sheet.col_values(chapter_col)[start_row + 3: end_row]
-    for i, chapter in enumerate(chapter_values):
-        if str(chapter).strip() == str(chapter_number).strip():
-            row_to_update_index = start_row + 4 + i
-            break
+    try:
+        chapter_values = titles_sheet.col_values(chapter_col)[start_row + 3: end_row]
+        for i, chapter in enumerate(chapter_values):
+            if str(chapter).strip() == str(chapter_number).strip():
+                row_to_update_index = start_row + 4 + i
+                break
+    except Exception as e:
+        logger.error(f"Помилка при пошуку розділу: {e}")
+        return None
     
     if row_to_update_index is None:
         logger.warning(f"Розділ {chapter_number} для тайтлу '{title_name}' не знайдено.")
@@ -207,14 +216,12 @@ def update_title_table(title, chapter, role, nickname):
         status_col = status_cell.col
         status_row = status_cell.row
         
-        # Оновлення статусу
         try:
             titles_sheet.update_cell(status_row, status_col, STATUS_DONE)
         except Exception as e:
             logger.error(f"Помилка оновлення статусу: {e}")
             return False
         
-        # Оновлення нікнейму
         date_col_key = role.lower() + "-Дата"
         date_col = COLUMN_MAP.get(date_col_key)
         if date_col:
@@ -225,16 +232,19 @@ def update_title_table(title, chapter, role, nickname):
                 logger.error(f"Помилка оновлення дати: {e}")
                 return False
                 
-        # Оновлення нікнейму в колонці над статусом
-        nick_col_key = role.lower() + "-Нік"
+        nick_col_key = role.lower() + "-нік1" # Припускаємо, що нік1 це перша колонка з ніками
         nick_col = COLUMN_MAP.get(nick_col_key)
         if nick_col:
-            current_nick = titles_sheet.cell(status_row, nick_col).value
-            if not current_nick or current_nick.strip().lower() == nickname.strip().lower():
-                titles_sheet.update_cell(status_row, nick_col, nickname)
-            else:
-                new_nick = f"{current_nick}, {nickname}"
-                titles_sheet.update_cell(status_row, nick_col, new_nick)
+            try:
+                current_nick = titles_sheet.cell(status_row, nick_col).value
+                if not current_nick or current_nick.strip().lower() == nickname.strip().lower():
+                    titles_sheet.update_cell(status_row, nick_col, nickname)
+                else:
+                    new_nick = f"{current_nick}, {nickname}"
+                    titles_sheet.update_cell(status_row, nick_col, new_nick)
+            except Exception as e:
+                logger.error(f"Помилка оновлення нікнейму: {e}")
+                return False
 
         return True
     return False
@@ -336,13 +346,12 @@ def set_main_roles(title, roles_map):
     header_row_to_update_idx = start_row + 3
     
     updates = []
-    # Канонічна мапа ролей для уникнення помилок
     role_mapping_canon = {"клін": "Клін", "переклад": "Переклад", "тайп": "Тайп", "ред": "Редакт", "редакт": "Редакт"}
     
     for role, nicks_list in roles_map.items():
         canonical_role = role_mapping_canon.get(role.lower())
-        if canonical_role and f"{canonical_role}-Нік" in COLUMN_MAP:
-            col_idx = COLUMN_MAP[f"{canonical_role}-Нік"]
+        if canonical_role and f"{canonical_role}-нік1" in COLUMN_MAP:
+            col_idx = COLUMN_MAP[f"{canonical_role}-нік1"]
             resolved_nicks = [NICKNAME_MAP.get(nick, nick) for nick in nicks_list]
             nicknames_str = ", ".join(resolved_nicks)
             updates.append({
@@ -372,7 +381,6 @@ def get_title_status_data(title_name):
         
     original_title = titles_sheet.cell(start_row, COLUMN_MAP["Тайтли"]).value
     
-    # Вибираємо діапазон даних
     data_range_start_row = start_row + 4
     data_range = titles_sheet.range(data_range_start_row, 1, end_row, len(COLUMN_MAP))
     
@@ -382,23 +390,19 @@ def get_title_status_data(title_name):
     for cell in data_range:
         col_key_base = "Розділ №"
         
-        # Знаходимо ключ для колонки
         for key, col_idx in COLUMN_MAP.items():
             if col_idx == cell.col:
                 col_key_base = key
                 break
         
-        # Перевіряємо, чи починається новий рядок
         if cell.col == COLUMN_MAP["Розділ №"]:
             if current_record:
                 records.append(current_record)
             current_record = {"chapter": cell.value, "published": False}
         
-        # Обробка статусу публікації
         if col_key_base == "Публікація-Статус" and cell.value:
             current_record["published"] = True
         
-        # Додаємо дані для інших ролей
         role_map = {v: k.split('-')[0] for k, v in COLUMN_MAP.items() if '-' in k}
         role_name = role_map.get(col_key_base)
         if role_name and cell.value:
