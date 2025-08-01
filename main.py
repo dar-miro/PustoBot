@@ -13,13 +13,13 @@ from telegram.ext import (
 )
 
 # Імпорти з ваших модулів, враховуючи структуру
-from PustoBot.core import parse_message 
 from PustoBot.handlers import start_command, handle_message, add_command
-from PustoBot.sheets import main_spreadsheet, initialize_header_map
-from publish import publish_command
-from status import status_command
 from thread import get_thread_handler
 from register import get_register_handler
+from publish import publish_command
+from status import status_command
+# Виправлено імпорт sheets
+from PustoBot.sheets import connect_to_google_sheets, main_spreadsheet 
 
 # Налаштування логування
 logging.basicConfig(
@@ -53,7 +53,6 @@ async def handle_webhook(request):
 
 async def main():
     """Start the bot."""
-    # ВИПРАВЛЕНО: Змінено назву змінної середовища на TELEGRAM_BOT_TOKEN
     bot_token = os.environ.get("TELEGRAM_BOT_TOKEN")
     if not bot_token:
         logger.error("TELEGRAM_BOT_TOKEN not found in environment variables.")
@@ -66,12 +65,9 @@ async def main():
         .build()
     )
 
-    # Ініціалізація карти колонок
-    try:
-        initialize_header_map()
-        logger.info("Карту колонок успішно ініціалізовано.")
-    except Exception as e:
-        logger.error(f"Помилка при ініціалізації карти колонок: {e}")
+    # Ініціалізація підключення до Google Sheets та карти колонок
+    if not connect_to_google_sheets():
+        logger.error("Не вдалося підключитися до Google Sheets. Бот не запускається.")
         return
 
     # Реєстрація хендлерів
