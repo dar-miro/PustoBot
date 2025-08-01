@@ -1,4 +1,5 @@
 import re
+from collections import defaultdict
 
 def parse_message(text, thread_title=None, bot_username=None):
     """
@@ -23,6 +24,12 @@ def parse_message(text, thread_title=None, bot_username=None):
     # Якщо текст починається з @бота — пропускаємо цей тег
     if bot_username and parts and parts[0].lower() == f"@{bot_username.lower()}":
         parts = parts[1:]
+    
+    # Якщо бот був згаданий в середині тексту, то він теж може бути пропущений
+    parts = [part for part in parts if part.lower() != f"@{bot_username.lower()}"]
+    
+    if not parts:
+        return None
 
     # Спробуємо розпарсити формат для гілки: "Розділ Роль [Нік]"
     if thread_title and len(parts) >= 2:
@@ -34,24 +41,31 @@ def parse_message(text, thread_title=None, bot_username=None):
             return thread_title, chapter, role, nickname
 
     # Спробуємо розпарсити повний формат: "Тайтл Розділ Роль [Нік]"
-    # Шукаємо перше число, яке може бути розділом
-    for i, part in enumerate(parts):
-        if re.match(r"^\d+$", part):  # Знайшли потенційний розділ (число)
-            # Перевіряємо, що є тайтл, роль та, можливо, нік
-            if i > 0 and len(parts) > i + 1 and parts[i+1].lower() in role_keywords:
-                title = " ".join(parts[:i])
-                chapter = part
-                role = parts[i + 1].lower()
-                nickname = parts[i + 2] if len(parts) > i + 2 else None
-                return title, chapter, role, nickname
+    # Знаходимо кінець назви тайтлу
+    title_parts = []
+    i = 0
+    while i < len(parts):
+        # Якщо наступний елемент - це число, а за ним - роль, це кінець назви тайтлу
+        if re.match(r"^\d+$", parts[i]) and i + 1 < len(parts) and parts[i+1].lower() in role_keywords:
+            break
+        title_parts.append(parts[i])
+        i += 1
     
-    # Якщо жоден з форматів не підходить
-    return None
+    title = " ".join(title_parts).strip()
+    
+    if not title or i >= len(parts):
+        return None
 
-def parse_set_thread_command(text):
+    chapter = parts[i]
+    role = parts[i+1].lower()
+    nickname = parts[i+2] if len(parts) > i + 2 else None
+    
+    return title, chapter, role, nickname
+
+def parse_members_string(text):
     """
-    Парсить команду /thread для встановлення тайтлу та основних ролей.
-    Формат: /thread Назва Тайтлу Клін - Нік1, Нік2 Переклад - Нік3 Тайп - Нік4 Ред - Нік5
+    Парсить рядок з учасниками для команди /thread.
+    Формат: `клін - Nick1, переклад - Nick2`
     Повертає: (title, {role: [nick1, nick2], ...})
     """
     parts = text.split()
@@ -59,7 +73,7 @@ def parse_set_thread_command(text):
         return None, {}
 
     title_parts = []
-    roles_map = {}
+    roles_map = defaultdict(list)
     current_role = None
     role_keywords = ["клін", "переклад", "тайп", "ред", "редакт"]
 
@@ -85,14 +99,9 @@ def parse_set_thread_command(text):
             if i + 1 < len(parts) and parts[i+1] == "-":
                 i += 1 
             roles_map[current_role] = []
-        elif current_role and part != "-": # Якщо є поточна роль і це не роз'єднувальний "-"
-            # Обробляємо кілька ніків через кому
-            nicks_in_part = [n.strip() for n in part.split(',') if n.strip()]
-            roles_map[current_role].extend(nicks_in_part)
+        elif current_role and part != "-": # Якщо є поточна роль і це не роз'єднувальний символ
+            roles_map[current_role].append(part)
+        
         i += 1
     
-    # Видаляємо дублікати та прибираємо пусті ніки
-    for role, nicks in roles_map.items():
-        roles_map[role] = sorted(list(set(n for n in nicks if n)))
-
     return title, roles_map

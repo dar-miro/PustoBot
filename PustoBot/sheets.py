@@ -222,7 +222,8 @@ def update_title_table(title, chapter, role, nickname):
             logger.error(f"Помилка оновлення статусу: {e}")
             return False
         
-        date_col_key = role.lower() + "-Дата"
+        # Оновлення дати
+        date_col_key = f"{ROLE_MAPPING.get(role.lower(), '').split('-')[0]}-Дата"
         date_col = COLUMN_MAP.get(date_col_key)
         if date_col:
             date_value = datetime.now().strftime('%d.%m.%Y')
@@ -232,19 +233,28 @@ def update_title_table(title, chapter, role, nickname):
                 logger.error(f"Помилка оновлення дати: {e}")
                 return False
                 
-        nick_col_key = role.lower() + "-нік1" # Припускаємо, що нік1 це перша колонка з ніками
-        nick_col = COLUMN_MAP.get(nick_col_key)
-        if nick_col:
-            try:
-                current_nick = titles_sheet.cell(status_row, nick_col).value
-                if not current_nick or current_nick.strip().lower() == nickname.strip().lower():
-                    titles_sheet.update_cell(status_row, nick_col, nickname)
-                else:
-                    new_nick = f"{current_nick}, {nickname}"
-                    titles_sheet.update_cell(status_row, nick_col, new_nick)
-            except Exception as e:
-                logger.error(f"Помилка оновлення нікнейму: {e}")
-                return False
+        # Оновлення нікнейму
+        # Шукаємо першу колонку під роллю, яка не є датою або статусом
+        nick_col_key = None
+        main_role_name = ROLE_MAPPING.get(role.lower(), '').split('-')[0]
+        for key, col_idx in COLUMN_MAP.items():
+            if key.startswith(f"{main_role_name}-") and "-Дата" not in key and "-Статус" not in key:
+                nick_col_key = key
+                break
+        
+        if nick_col_key:
+            nick_col = COLUMN_MAP.get(nick_col_key)
+            if nick_col:
+                try:
+                    current_nick = titles_sheet.cell(status_row, nick_col).value
+                    if not current_nick or current_nick.strip().lower() == nickname.strip().lower():
+                        titles_sheet.update_cell(status_row, nick_col, nickname)
+                    else:
+                        new_nick = f"{current_nick}, {nickname}"
+                        titles_sheet.update_cell(status_row, nick_col, new_nick)
+                except Exception as e:
+                    logger.error(f"Помилка оновлення нікнейму: {e}")
+                    return False
 
         return True
     return False
