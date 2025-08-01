@@ -16,36 +16,69 @@ main_spreadsheet = None
 log_sheet = None
 titles_sheet = None
 users_sheet = None
-COLUMN_MAP = {} # Глобальна карта колонок
-NICKNAME_MAP = {} # Глобальна карта нікнеймів
+COLUMN_MAP = {}
+NICKNAME_MAP = {}
+ROLE_MAPPING = {
+    "клін": "Клін-Статус",
+    "переклад": "Переклад-Статус",
+    "тайп": "Тайп-Статус",
+    "редакт": "Редакт-Статус",
+    "ред": "Редакт-Статус",
+}
+STATUS_DONE = "✅"
+STATUS_TODO = "❌"
 
 def initialize_header_map():
     """
-    Читає перші два рядки таблиці 'Тайтли' і створює глобальну карту колонок.
-    Ця функція має викликатись один раз при старті бота.
+    Читає заголовки таблиці 'Тайтли', враховуючи складну структуру,
+    і створює глобальну карту колонок.
     """
     global COLUMN_MAP
     if titles_sheet is None:
         logger.error("Аркуш 'Тайтли' не ініціалізовано. Неможливо створити карту колонок.")
         return
+    
     try:
-        header_rows = titles_sheet.get('A1:O2')
-        main_headers = header_rows[0]
-        sub_headers = header_rows[1] if len(header_rows) > 1 else []
+        header_rows = titles_sheet.get('A1:O4', value_render_option='UNFORMATTED_VALUE')
+        if len(header_rows) < 4:
+            logger.error("Недостатньо рядків для ініціалізації карти колонок. Перевірте структуру таблиці.")
+            return
+
         COLUMN_MAP.clear()
         
-        current_main_header = None
-        for i, header in enumerate(main_headers):
-            if header:
-                current_main_header = header
-            
-            key = sub_headers[i] if i < len(sub_headers) and sub_headers[i] else current_main_header
-            if key:
-                COLUMN_MAP[key.strip()] = i + 1
+        main_headers = header_rows[0]
+        sub_headers = header_rows[2]
+        role_nicks_headers = header_rows[3]
+
+        col_index = 1
+        main_role = None
         
+        for i in range(len(main_headers)):
+            if main_headers[i] and main_headers[i] != "":
+                main_role = main_headers[i]
+                
+            if main_role:
+                if sub_headers[i] == "Дата":
+                    COLUMN_MAP[f"{main_role}-Дата"] = col_index
+                elif sub_headers[i] == "Статус":
+                    COLUMN_MAP[f"{main_role}-Статус"] = col_index
+                elif role_nicks_headers[i] and role_nicks_headers[i] != "":
+                    # Це колонка ніків під роллю
+                    COLUMN_MAP[f"{main_role}-{role_nicks_headers[i]}"] = col_index
+                
+            # Обробка колонок Тайтли та Розділ
+            if header_rows[3][i] == "Розділ №":
+                COLUMN_MAP["Розділ №"] = col_index
+            if header_rows[0][i] == "Тайтли":
+                COLUMN_MAP["Тайтли"] = col_index
+            if header_rows[2][i] == "Дата дедлайну":
+                COLUMN_MAP["Дата дедлайну"] = col_index
+            if header_rows[2][i] == "Статус" and header_rows[0][i] == "Публікація":
+                COLUMN_MAP["Публікація-Статус"] = col_index
+            
+            col_index += 1
+
         logger.info("Карту колонок успішно ініціалізовано.")
-    except gspread.exceptions.APIError as api_e:
-        logger.error(f"Помилка Google Sheets API при ініціалізації карти колонок: {api_e.response.text}")
     except Exception as e:
         logger.error(f"Невідома помилка при ініціалізації карти колонок: {e}")
 
@@ -102,14 +135,15 @@ def find_title_block(title_name):
     if start_row is None:
         logger.warning(f"Тайтл '{title_name}' не знайдено.")
         return None, None
-        
-    end_row = start_row
+    
+    # Відступ у 4 рядки до даних, 4й рядок це вже розділи
+    end_row = start_row + 4
     # знаходимо кінець блоку тайтлу (порожній рядок)
-    for i in range(start_row + 1, len(title_list) + 1):
+    for i in range(start_row + 5, len(title_list) + 1):
         if i > len(title_list) or not title_list[i-1]:
             end_row = i - 1
             break
-    if end_row == start_row:
+    if end_row == start_row + 4:
          end_row = len(title_list) + 1
          
     return start_row, end_row
@@ -120,28 +154,31 @@ def find_cell_by_role(title_name, chapter_number, role):
     if start_row is None:
         return None
 
-    # Номера розділів знаходяться в стовпці "№"
-    chapter_col = COLUMN_MAP.get("№")
+    chapter_col = COLUMN_MAP.get("Розділ №")
     if not chapter_col:
-        logger.error("Колонка '№' не знайдена в карті колонок.")
+        logger.error("Колонка 'Розділ №' не знайдена в карті колонок.")
         return None
 
-    # Шукаємо рядок з потрібним номером розділу
     row_to_update_index = None
-    all_chapters = titles_sheet.col_values(chapter_col, value_render_option='FORMATTED_VALUE')[start_row-1:end_row-1]
-    
-    for i, chapter in enumerate(all_chapters):
+    # Шукаємо в діапазоні, починаючи з рядка з номером розділу
+    chapter_values = titles_sheet.col_values(chapter_col)[start_row + 3: end_row]
+    for i, chapter in enumerate(chapter_values):
         if str(chapter).strip() == str(chapter_number).strip():
-            row_to_update_index = start_row + i
+            row_to_update_index = start_row + 4 + i
             break
     
     if row_to_update_index is None:
         logger.warning(f"Розділ {chapter_number} для тайтлу '{title_name}' не знайдено.")
         return None
 
-    column_index = COLUMN_MAP.get(role)
+    column_key = ROLE_MAPPING.get(role.lower())
+    if not column_key:
+        logger.error(f"Роль '{role}' не знайдена в ROLE_MAPPING.")
+        return None
+
+    column_index = COLUMN_MAP.get(column_key)
     if not column_index:
-        logger.error(f"Карта колонок порожня. Встановлення ролей неможливе.")
+        logger.error(f"Колонка для ролі '{role}' не знайдена в карті колонок.")
         return None
     
     return titles_sheet.cell(row_to_update_index, column_index)
@@ -156,8 +193,7 @@ def update_cell(title, chapter, role, new_value):
     cell = find_cell_by_role(title, chapter, role)
     if cell:
         try:
-            cell.value = new_value
-            titles_sheet.update_cells([cell])
+            titles_sheet.update_cell(cell.row, cell.col, new_value)
             return True
         except Exception as e:
             logger.error(f"Помилка оновлення клітинки: {e}")
@@ -166,19 +202,41 @@ def update_cell(title, chapter, role, new_value):
 
 def update_title_table(title, chapter, role, nickname):
     """Оновлює статус виконання завдання."""
-    cell_to_update = find_cell_by_role(title, chapter, role)
-    if cell_to_update:
-        current_value = cell_to_update.value
-        # Якщо клітинка порожня, встановлюємо новий нікнейм
-        if not current_value:
-            return update_cell(title, chapter, role, nickname)
-        # Якщо клітинка вже містить дані, перевіряємо, чи нікнейм співпадає
-        elif current_value.strip().lower() == nickname.strip().lower():
-            return True # нічого не робимо, оновлення не потрібне
-        # Якщо нікнейм інший, додаємо його через кому
-        else:
-            new_value = f"{current_value}, {nickname}"
-            return update_cell(title, chapter, role, new_value)
+    status_cell = find_cell_by_role(title, chapter, role)
+    if status_cell:
+        status_col = status_cell.col
+        status_row = status_cell.row
+        
+        # Оновлення статусу
+        try:
+            titles_sheet.update_cell(status_row, status_col, STATUS_DONE)
+        except Exception as e:
+            logger.error(f"Помилка оновлення статусу: {e}")
+            return False
+        
+        # Оновлення нікнейму
+        date_col_key = role.lower() + "-Дата"
+        date_col = COLUMN_MAP.get(date_col_key)
+        if date_col:
+            date_value = datetime.now().strftime('%d.%m.%Y')
+            try:
+                titles_sheet.update_cell(status_row, date_col, date_value)
+            except Exception as e:
+                logger.error(f"Помилка оновлення дати: {e}")
+                return False
+                
+        # Оновлення нікнейму в колонці над статусом
+        nick_col_key = role.lower() + "-Нік"
+        nick_col = COLUMN_MAP.get(nick_col_key)
+        if nick_col:
+            current_nick = titles_sheet.cell(status_row, nick_col).value
+            if not current_nick or current_nick.strip().lower() == nickname.strip().lower():
+                titles_sheet.update_cell(status_row, nick_col, nickname)
+            else:
+                new_nick = f"{current_nick}, {nickname}"
+                titles_sheet.update_cell(status_row, nick_col, new_nick)
+
+        return True
     return False
 
 def get_user_sheet():
@@ -196,7 +254,7 @@ def find_user_row_by_nick_or_tag(user_identifier):
     for i, row in enumerate(data):
         if row.get('Нік', '').lower() == user_identifier.lower() or \
            row.get('Telegram-нік', '').lower() == user_identifier.lower():
-            return row, i + 2 # +2, бо get_all_records починає з 0, а рядок 1 — це заголовки
+            return row, i + 2
     return None, None
 
 def append_user_row(telegram_nick, telegram_tag, nickname, roles):
@@ -252,12 +310,12 @@ def set_publish_status(title, chapter, status="Опубліковано"):
         logger.error("Карта колонок порожня. Оновлення неможливе.")
         return "error", None
         
-    publish_col = COLUMN_MAP.get("Опубліковано")
+    publish_col = COLUMN_MAP.get("Публікація-Статус")
     if not publish_col:
-        logger.error("Колонка 'Опубліковано' не знайдена в карті колонок.")
+        logger.error("Колонка 'Публікація-Статус' не знайдена в карті колонок.")
         return "error", None
     
-    cell_to_update = find_cell_by_role(title, chapter, "№") # Знаходимо рядок по номеру розділу
+    cell_to_update = find_cell_by_role(title, chapter, "клін")
     if cell_to_update:
         row_index = cell_to_update.row
         titles_sheet.update_cell(row_index, publish_col, status)
@@ -270,15 +328,12 @@ def set_main_roles(title, roles_map):
         logger.error("Карта колонок порожня. Встановлення ролей неможливе.")
         return False
     
-    # Використовуємо глобальну мапу нікнеймів
-    global NICKNAME_MAP
-    
     start_row, _ = find_title_block(title)
     if start_row is None:
         logger.warning(f"Тайтл '{title}' не знайдено для встановлення ролей.")
         return False
 
-    header_row_to_update_idx = start_row + 1 # +1 для рядка з ролями
+    header_row_to_update_idx = start_row + 3
     
     updates = []
     # Канонічна мапа ролей для уникнення помилок
@@ -286,9 +341,8 @@ def set_main_roles(title, roles_map):
     
     for role, nicks_list in roles_map.items():
         canonical_role = role_mapping_canon.get(role.lower())
-        if canonical_role and canonical_role in COLUMN_MAP:
-            col_idx = COLUMN_MAP[canonical_role]
-            # Розв'язуємо нікнейм за допомогою глобальної мапи
+        if canonical_role and f"{canonical_role}-Нік" in COLUMN_MAP:
+            col_idx = COLUMN_MAP[f"{canonical_role}-Нік"]
             resolved_nicks = [NICKNAME_MAP.get(nick, nick) for nick in nicks_list]
             nicknames_str = ", ".join(resolved_nicks)
             updates.append({
@@ -316,34 +370,40 @@ def get_title_status_data(title_name):
     if start_row is None:
         return None, None
         
-    title_name_cell = titles_sheet.cell(start_row, COLUMN_MAP["Тайтли"])
-    original_title = title_name_cell.value
+    original_title = titles_sheet.cell(start_row, COLUMN_MAP["Тайтли"]).value
     
-    data_range = titles_sheet.range(start_row + 1, 1, end_row, len(COLUMN_MAP))
+    # Вибираємо діапазон даних
+    data_range_start_row = start_row + 4
+    data_range = titles_sheet.range(data_range_start_row, 1, end_row, len(COLUMN_MAP))
     
     records = []
     current_record = {}
     
     for cell in data_range:
-        col_name = titles_sheet.cell(start_row + 1, cell.col).value
-        # Обробляємо підзаголовки
-        if col_name is None or col_name == "":
-            col_name = titles_sheet.cell(start_row, cell.col).value
+        col_key_base = "Розділ №"
+        
+        # Знаходимо ключ для колонки
+        for key, col_idx in COLUMN_MAP.items():
+            if col_idx == cell.col:
+                col_key_base = key
+                break
         
         # Перевіряємо, чи починається новий рядок
-        if cell.col == 1:
+        if cell.col == COLUMN_MAP["Розділ №"]:
             if current_record:
                 records.append(current_record)
             current_record = {"chapter": cell.value, "published": False}
         
-        if col_name == "Опубліковано" and cell.value == "Опубліковано":
+        # Обробка статусу публікації
+        if col_key_base == "Публікація-Статус" and cell.value:
             current_record["published"] = True
         
-        # Додаємо дані інших ролей, якщо вони є
-        if col_name and cell.value and col_name not in ["Тайтли", "№", "Опубліковано"]:
-            current_record[col_name.lower()] = cell.value
+        # Додаємо дані для інших ролей
+        role_map = {v: k.split('-')[0] for k, v in COLUMN_MAP.items() if '-' in k}
+        role_name = role_map.get(col_key_base)
+        if role_name and cell.value:
+            current_record[role_name.lower()] = cell.value
 
-    # Додаємо останній запис
     if current_record:
         records.append(current_record)
 
