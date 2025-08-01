@@ -13,7 +13,7 @@ from telegram.ext import (
 )
 
 # Імпорти з ваших модулів, враховуючи структуру
-from PustoBot.core import parse_message # Якщо використовується parse_message в main
+from PustoBot.core import parse_message 
 from PustoBot.handlers import start_command, handle_message, add_command
 from PustoBot.sheets import main_spreadsheet, initialize_header_map
 from publish import publish_command
@@ -53,21 +53,21 @@ async def handle_webhook(request):
 
 async def main():
     """Start the bot."""
-    bot_token = os.environ.get("BOT_TOKEN")
+    # ВИПРАВЛЕНО: Змінено назву змінної середовища на TELEGRAM_BOT_TOKEN
+    bot_token = os.environ.get("TELEGRAM_BOT_TOKEN")
     if not bot_token:
-        logger.error("BOT_TOKEN not found in environment variables.")
+        logger.error("TELEGRAM_BOT_TOKEN not found in environment variables.")
         return
     
     bot_app = (
         ApplicationBuilder()
         .token(bot_token)
-        .updater(None)  # No Updater when using webhook
+        .updater(None)
         .build()
     )
 
     # Ініціалізація карти колонок
     try:
-        # Ця функція знаходиться у файлі PustoBot/sheets.py
         initialize_header_map()
         logger.info("Карту колонок успішно ініціалізовано.")
     except Exception as e:
@@ -81,7 +81,6 @@ async def main():
     bot_app.add_handler(CommandHandler("publish", publish_command_wrapper))
     
     bot_app.add_handler(get_thread_handler())
-    # Передача main_spreadsheet як аргументу, якщо це потрібно для get_register_handler
     bot_app.add_handler(get_register_handler(main_spreadsheet)) 
 
     # Обробник для звичайних повідомлень
@@ -97,7 +96,6 @@ async def main():
     await bot_app.initialize()
     await bot_app.start()
     
-    # Потрібно переконатися, що у `bot_app` є черга оновлень
     if not hasattr(bot_app, 'update_queue'):
         logger.error("bot_app has no update_queue attribute!")
         return
