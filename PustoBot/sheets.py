@@ -37,7 +37,7 @@ def normalize_title(title):
 def initialize_header_map():
     """
     Читає заголовки таблиці 'Тайтли' і створює глобальну карту колонок.
-    Логіка переписана для надійного пошуку в багаторядкових заголовках.
+    Логіка переписана для надійної ідентифікації колонок.
     """
     global COLUMN_MAP
     if titles_sheet is None:
@@ -45,7 +45,6 @@ def initialize_header_map():
         return False
 
     try:
-        # Читаємо перші 4 рядки, щоб отримати всі заголовки
         headers = titles_sheet.get_all_values()
         if len(headers) < 4:
             logger.error("Недостатньо рядків для заголовків. Очікується мінімум 4.")
@@ -57,7 +56,6 @@ def initialize_header_map():
 
         COLUMN_MAP = {}
 
-        # Визначаємо індекси головних заголовків ролей
         role_base_cols = {}
         try:
             role_base_cols["Тайтли"] = header_row_1.index("Тайтли")
@@ -70,39 +68,33 @@ def initialize_header_map():
             logger.error(f"Не вдалося знайти один з головних заголовків: {e}")
             return False
 
-        # Обробка заголовків ролей та підзаголовків
         role_names = ["Клін", "Переклад", "Тайп", "Редакт"]
         for role_name in role_names:
             col_start_index = role_base_cols[role_name]
-
-            # Знаходимо кінець діапазону для поточної ролі
             col_end_index = len(header_row_1)
             next_role_indices = [v for k, v in role_base_cols.items() if v > col_start_index]
             if next_role_indices:
                 col_end_index = min(next_role_indices)
 
-            # Знаходимо підзаголовки "Нік", "Дата" та "Статус"
             try:
-                sub_header_slice_row3 = header_row_3[col_start_index:col_end_index]
                 sub_header_slice_row4 = header_row_4[col_start_index:col_end_index]
-
-                # Для "Нік" ми шукаємо в рядку 4 (header_row_4)
                 if role_name in sub_header_slice_row4:
                     col_index = sub_header_slice_row4.index(role_name) + col_start_index
                     COLUMN_MAP[f"{role_name}-Нік"] = col_index + 1
-                
-                # Для "Дата" та "Статус" ми шукаємо в рядку 3 (header_row_3)
+            except ValueError:
+                logger.warning(f"Не вдалося знайти нік для ролі '{role_name}'.")
+            
+            try:
+                sub_header_slice_row3 = header_row_3[col_start_index:col_end_index]
                 if "Дата" in sub_header_slice_row3:
                     col_index_date = sub_header_slice_row3.index("Дата") + col_start_index
                     COLUMN_MAP[f"{role_name}-Дата"] = col_index_date + 1
-
                 if "Статус" in sub_header_slice_row3:
                     col_index_status = sub_header_slice_row3.index("Статус") + col_start_index
                     COLUMN_MAP[f"{role_name}-Статус"] = col_index_status + 1
             except ValueError as e:
                 logger.warning(f"Не вдалося знайти підзаголовки для ролі '{role_name}': {e}")
         
-        # Обробка Публікації
         publish_col_start = role_base_cols["Публікація"]
         publish_slice_row3 = header_row_3[publish_col_start:]
         
@@ -111,14 +103,12 @@ def initialize_header_map():
             COLUMN_MAP["Публікація-Дата дедлайну"] = col_index_deadline + 1
         except ValueError:
             logger.warning("Не вдалося знайти дату дедлайну.")
-
         try:
             col_index_status = publish_slice_row3.index("Статус") + publish_col_start
             COLUMN_MAP["Публікація-Статус"] = col_index_status + 1
         except ValueError:
             logger.warning("Не вдалося знайти статус публікації.")
 
-        # Обробка інших заголовків
         try:
             COLUMN_MAP["Тайтли"] = role_base_cols["Тайтли"] + 1
             COLUMN_MAP["Розділ №"] = header_row_4.index("Розділ №") + 1
@@ -226,7 +216,9 @@ def find_title_block(title_name):
 def find_chapter_row_in_block(start_row, end_row, chapter_number):
     """Шукає рядок розділу всередині блоку тайтлу."""
     try:
-        chapter_col_values = titles_sheet.range(f'B{start_row + 1}:B{end_row}')
+        chapter_col = COLUMN_MAP["Розділ №"]
+        # Зчитуємо тільки колонку з номерами розділів в межах блоку
+        chapter_col_values = titles_sheet.range(f'{gspread.utils.col_to_a1(chapter_col)}{start_row + 1}:{gspread.utils.col_to_a1(chapter_col)}{end_row}')
         for cell in chapter_col_values:
             if cell.value and cell.value.strip() == str(chapter_number):
                 return cell.row
@@ -258,16 +250,13 @@ def update_title_table(title_name, chapter_number, role, nickname=None):
         role_base_name = ROLE_MAPPING[role]
         updates = []
         
-        # Оновлюємо нікнейм виконавця
         if nickname and f"{role_base_name}-Нік" in COLUMN_MAP:
             updates.append({'range': gspread.utils.rowcol_to_a1(chapter_row, COLUMN_MAP[f"{role_base_name}-Нік"]), 'values': [[nickname]]})
         
-        # Оновлюємо дату
         if f"{role_base_name}-Дата" in COLUMN_MAP:
             current_date = datetime.now().strftime("%d.%m.%Y")
             updates.append({'range': gspread.utils.rowcol_to_a1(chapter_row, COLUMN_MAP[f"{role_base_name}-Дата"]), 'values': [[current_date]]})
             
-        # Оновлюємо статус
         if f"{role_base_name}-Статус" in COLUMN_MAP:
             updates.append({'range': gspread.utils.rowcol_to_a1(chapter_row, COLUMN_MAP[f"{role_base_name}-Статус"]), 'values': [[STATUS_DONE]]})
 
@@ -419,7 +408,6 @@ def set_main_roles(title_name, roles_map):
                 role_base_name = ROLE_MAPPING[role]
                 if f"{role_base_name}-Нік" in COLUMN_MAP:
                     col = COLUMN_MAP[f"{role_base_name}-Нік"]
-                    # Оновлюємо нік в рядку, де знаходиться заголовок "Розділ №"
                     updates.append({'range': gspread.utils.rowcol_to_a1(start_row + 1, col), 'values': [[nick]]})
         
         if updates:
