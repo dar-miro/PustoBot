@@ -71,56 +71,52 @@ def initialize_header_map():
             return False
 
         # Обробка заголовків ролей та підзаголовків
-        role_names = ["Клін", "Переклад", "Тайп", "Редакт", "Публікація"]
+        role_names = ["Клін", "Переклад", "Тайп", "Редакт"]
         for role_name in role_names:
             col_start_index = role_base_cols[role_name]
 
-            # Знайдемо кінець діапазону для поточної ролі
+            # Знаходимо кінець діапазону для поточної ролі
             col_end_index = len(header_row_1)
             next_role_indices = [v for k, v in role_base_cols.items() if v > col_start_index]
             if next_role_indices:
                 col_end_index = min(next_role_indices)
 
-            if role_name != "Публікація":
-                # Знаходимо "Нік" у 4-му рядку в межах колонки ролі
-                try:
-                    sub_header_slice = header_row_4[col_start_index:col_end_index]
-                    col_index = sub_header_slice.index(role_name) + col_start_index
+            # Знаходимо підзаголовки "Нік", "Дата" та "Статус"
+            try:
+                sub_header_slice_row3 = header_row_3[col_start_index:col_end_index]
+                sub_header_slice_row4 = header_row_4[col_start_index:col_end_index]
+
+                # Для "Нік" ми шукаємо в рядку 4 (header_row_4)
+                if role_name in sub_header_slice_row4:
+                    col_index = sub_header_slice_row4.index(role_name) + col_start_index
                     COLUMN_MAP[f"{role_name}-Нік"] = col_index + 1
-                except ValueError:
-                    logger.warning(f"Не вдалося знайти нік для ролі '{role_name}'.")
-
-                # Знаходимо "Дата" та "Статус" у 3-му рядку в межах колонки ролі
-                try:
-                    sub_header_slice = header_row_3[col_start_index:col_end_index]
-                    col_index_date = sub_header_slice.index("Дата") + col_start_index
+                
+                # Для "Дата" та "Статус" ми шукаємо в рядку 3 (header_row_3)
+                if "Дата" in sub_header_slice_row3:
+                    col_index_date = sub_header_slice_row3.index("Дата") + col_start_index
                     COLUMN_MAP[f"{role_name}-Дата"] = col_index_date + 1
-                except ValueError:
-                    logger.warning(f"Не вдалося знайти дату для ролі '{role_name}'.")
 
-                try:
-                    sub_header_slice = header_row_3[col_start_index:col_end_index]
-                    col_index_status = sub_header_slice.index("Статус") + col_start_index
+                if "Статус" in sub_header_slice_row3:
+                    col_index_status = sub_header_slice_row3.index("Статус") + col_start_index
                     COLUMN_MAP[f"{role_name}-Статус"] = col_index_status + 1
-                except ValueError:
-                    logger.warning(f"Не вдалося знайти статус для ролі '{role_name}'.")
-            
-            else: # Публікація
-                # Знаходимо "Дата дедлайну" та "Статус"
-                try:
-                    sub_header_slice = header_row_3[col_start_index:col_end_index]
-                    col_index_deadline = sub_header_slice.index("Дата дедлайну") + col_start_index
-                    COLUMN_MAP[f"{role_name}-Дата дедлайну"] = col_index_deadline + 1
-                except ValueError:
-                    logger.warning(f"Не вдалося знайти дату дедлайну.")
+            except ValueError as e:
+                logger.warning(f"Не вдалося знайти підзаголовки для ролі '{role_name}': {e}")
+        
+        # Обробка Публікації
+        publish_col_start = role_base_cols["Публікація"]
+        publish_slice_row3 = header_row_3[publish_col_start:]
+        
+        try:
+            col_index_deadline = publish_slice_row3.index("Дата дедлайну") + publish_col_start
+            COLUMN_MAP["Публікація-Дата дедлайну"] = col_index_deadline + 1
+        except ValueError:
+            logger.warning("Не вдалося знайти дату дедлайну.")
 
-                try:
-                    sub_header_slice = header_row_3[col_start_index:col_end_index]
-                    col_index_status = sub_header_slice.index("Статус") + col_start_index
-                    COLUMN_MAP[f"{role_name}-Статус"] = col_index_status + 1
-                except ValueError:
-                    logger.warning(f"Не вдалося знайти статус публікації.")
-
+        try:
+            col_index_status = publish_slice_row3.index("Статус") + publish_col_start
+            COLUMN_MAP["Публікація-Статус"] = col_index_status + 1
+        except ValueError:
+            logger.warning("Не вдалося знайти статус публікації.")
 
         # Обробка інших заголовків
         try:
@@ -149,7 +145,6 @@ def load_nickname_map():
             logger.warning("Аркуш 'Користувачі' порожній.")
             return False
 
-        # Оновлена логіка для завантаження мапи нікнеймів: {telegram_tag: user_nick}
         NICKNAME_MAP = {row[1].lower(): row[2] for row in users[1:] if len(row) > 2 and row[1] and row[2]}
         logger.info("Мапа нікнеймів успішно завантажена.")
         return True
@@ -202,10 +197,8 @@ def find_title_block(title_name):
     try:
         normalized_name = normalize_title(title_name)
         
-        # Завантажуємо всі значення з колонки Тайтли (A)
         titles_col_values = titles_sheet.col_values(COLUMN_MAP["Тайтли"])
         
-        # Знаходимо початок блоку
         try:
             start_index = next(i for i, v in enumerate(titles_col_values) if normalize_title(v) == normalized_name)
             start_row = start_index + 1
@@ -213,7 +206,6 @@ def find_title_block(title_name):
             logger.warning(f"Тайтл '{title_name}' не знайдено.")
             return None, None
             
-        # Знаходимо кінець блоку за порожнім рядком
         end_index = start_index
         for i in range(start_index + 1, len(titles_col_values)):
             if not titles_col_values[i]:
@@ -234,9 +226,8 @@ def find_title_block(title_name):
 def find_chapter_row_in_block(start_row, end_row, chapter_number):
     """Шукає рядок розділу всередині блоку тайтлу."""
     try:
-        # Шукаємо в колонці Тайтли (A), починаючи відразу після рядка з тайтлом
-        chapter_cells = titles_sheet.range(f'A{start_row + 1}:A{end_row}')
-        for cell in chapter_cells:
+        chapter_col_values = titles_sheet.range(f'B{start_row + 1}:B{end_row}')
+        for cell in chapter_col_values:
             if cell.value and cell.value.strip() == str(chapter_number):
                 return cell.row
         return None
@@ -292,7 +283,6 @@ def update_title_table(title_name, chapter_number, role, nickname=None):
 def set_publish_status(title_name, chapter_number):
     """Оновлює статус публікації розділу."""
     if not titles_sheet:
-        logger.error("Аркуш 'Тайтли' не ініціалізовано.")
         return "error", "Аркуш 'Тайтли' не ініціалізовано."
 
     start_row, end_row = find_title_block(title_name)
@@ -307,7 +297,6 @@ def set_publish_status(title_name, chapter_number):
         publish_status_col = COLUMN_MAP["Публікація-Статус"]
         titles_sheet.update_cell(chapter_row, publish_status_col, PUBLISHED_DONE)
         
-        # Повертаємо оригінальну назву тайтлу з клітинки
         original_title = titles_sheet.cell(start_row, COLUMN_MAP["Тайтли"]).value
         return "success", original_title
     except Exception as e:
@@ -339,18 +328,16 @@ def get_title_status_data(title_name):
         chapter_number = row_data[0].value
         record = {"chapter": chapter_number, "published": False, "roles": {}}
         
-        # Перевіряємо статуси для кожної ролі
         for role_key, col_key in ROLE_MAPPING.items():
-            status_col_index = COLUMN_MAP[f"{col_key}-Статус"] - 1
-            if len(row_data) > status_col_index:
-                status_value = row_data[status_col_index].value
+            status_col_index = COLUMN_MAP.get(f"{col_key}-Статус")
+            if status_col_index is not None and len(row_data) > status_col_index - 1:
+                status_value = row_data[status_col_index - 1].value
                 record["roles"][role_key] = status_value == STATUS_DONE
 
-        # Перевіряємо статус публікації
         if "Публікація-Статус" in COLUMN_MAP:
-            publish_status_col_index = COLUMN_MAP["Публікація-Статус"] - 1
-            if len(row_data) > publish_status_col_index:
-                publish_status_value = row_data[publish_status_col_index].value
+            publish_status_col_index = COLUMN_MAP["Публікація-Статус"]
+            if publish_status_col_index is not None and len(row_data) > publish_status_col_index - 1:
+                publish_status_value = row_data[publish_status_col_index - 1].value
                 record["published"] = publish_status_value == PUBLISHED_DONE
 
         status_report.append(record)
@@ -427,13 +414,12 @@ def set_main_roles(title_name, roles_map):
 
     try:
         updates = []
-        # Ніки основних відповідальних знаходяться в рядку, що йде після назви тайтлу
-        # Це рядок з заголовком "Розділ №", який має індекс start_row + 1
         for role, nick in roles_map.items():
             if role in ROLE_MAPPING:
                 role_base_name = ROLE_MAPPING[role]
                 if f"{role_base_name}-Нік" in COLUMN_MAP:
                     col = COLUMN_MAP[f"{role_base_name}-Нік"]
+                    # Оновлюємо нік в рядку, де знаходиться заголовок "Розділ №"
                     updates.append({'range': gspread.utils.rowcol_to_a1(start_row + 1, col), 'values': [[nick]]})
         
         if updates:
