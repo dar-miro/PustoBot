@@ -237,7 +237,7 @@ def find_chapter_row_in_block(start_row, end_row, chapter_number):
         # Шукаємо в колонці Тайтли (A), починаючи відразу після рядка з тайтлом
         chapter_cells = titles_sheet.range(f'A{start_row + 1}:A{end_row}')
         for cell in chapter_cells:
-            if cell.value == str(chapter_number):
+            if cell.value and cell.value.strip() == str(chapter_number):
                 return cell.row
         return None
     except Exception as e:
@@ -245,7 +245,7 @@ def find_chapter_row_in_block(start_row, end_row, chapter_number):
         return None
 
 def update_title_table(title_name, chapter_number, role, nickname=None):
-    """Оновлює статус та дату для заданого тайтлу, розділу та ролі."""
+    """Оновлює статус та дату для заданого тайтлу, розділу та ролі, а також записує нік виконавця."""
     if not titles_sheet:
         logger.error("Аркуш 'Тайтли' не ініціалізовано.")
         return False
@@ -264,15 +264,12 @@ def update_title_table(title_name, chapter_number, role, nickname=None):
         return False
 
     try:
-        # Отримуємо назви колонок з ROLE_MAPPING
         role_base_name = ROLE_MAPPING[role]
-        
         updates = []
         
-        # Оновлюємо нікнейм, якщо він наданий
+        # Оновлюємо нікнейм виконавця
         if nickname and f"{role_base_name}-Нік" in COLUMN_MAP:
-            # Нік відповідального знаходиться в тому ж рядку, що і тайтл, але в колонці ролі
-            updates.append({'range': gspread.utils.rowcol_to_a1(start_row, COLUMN_MAP[f"{role_base_name}-Нік"]), 'values': [[nickname]]})
+            updates.append({'range': gspread.utils.rowcol_to_a1(chapter_row, COLUMN_MAP[f"{role_base_name}-Нік"]), 'values': [[nickname]]})
         
         # Оновлюємо дату
         if f"{role_base_name}-Дата" in COLUMN_MAP:
@@ -385,9 +382,9 @@ def find_user_row_by_nick_or_tag(nickname, telegram_tag):
     try:
         users_data = users_sheet.get_all_values()
         for i, row in enumerate(users_data):
-            if len(row) > 2 and row[2].lower() == nickname.lower():
+            if len(row) > 2 and row[2].strip().lower() == nickname.lower():
                 return i + 1
-            if len(row) > 1 and row[1].lower() == telegram_tag.lower():
+            if len(row) > 1 and row[1].strip().lower() == telegram_tag.lower():
                 return i + 1
         return None
     except Exception as e:
@@ -430,6 +427,8 @@ def set_main_roles(title_name, roles_map):
 
     try:
         updates = []
+        # Ніки основних відповідальних знаходяться в рядку, що йде після назви тайтлу
+        # Це рядок з заголовком "Розділ №", який має індекс start_row + 1
         for role, nick in roles_map.items():
             if role in ROLE_MAPPING:
                 role_base_name = ROLE_MAPPING[role]
