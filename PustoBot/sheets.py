@@ -369,3 +369,121 @@ def normalize_title(title):
     # Прибираємо пробіли, переводимо в нижній регістр і видаляємо не-буквено-цифрові символи
     normalized = re.sub(r'[^a-z0-9]', '', title.lower())
     return normalized
+
+def set_main_roles(title_name, roles_map):
+    """
+    Записує основних відповідальних за тайтл в заголовок блоку.
+    """
+    if not COLUMN_MAP:
+        logger.error("Карта колонок порожня. Неможливо встановити ролі.")
+        return False
+        
+    title_start_row, _ = find_title_block(title_name)
+    if title_start_row is None:
+        logger.warning(f"Тайтл '{title_name}' не знайдено.")
+        return False
+        
+    try:
+        # Новий формат, що використовує назви з `COLUMN_MAP`
+        updates = []
+        for role, nickname in roles_map.items():
+            role_key = role.lower()
+            column_index = COLUMN_MAP.get(role_key)
+            if column_index:
+                cell_range = gspread.utils.rowcol_to_a1(title_start_row + 1, column_index + 1)
+                updates.append({
+                    'range': cell_range,
+                    'values': [[nickname]]
+                })
+        
+        if updates:
+            titles_sheet.batch_update(updates)
+
+        return True
+    except Exception as e:
+        logger.error(f"Помилка при встановленні головних ролей: {e}")
+        return False
+
+def set_publish_status(title_name, chapter_number):
+    """
+    Встановлює статус розділу на 'Опубліковано'.
+    """
+    if not COLUMN_MAP:
+        logger.error("Карта колонок порожня. Неможливо встановити статус публікації.")
+        return "error", "Internal error."
+        
+    title_start_row, _ = find_title_block(title_name)
+    if title_start_row is None:
+        logger.warning(f"Тайтл '{title_name}' не знайдено.")
+        return "error", f"Тайтл '{title_name}' не знайдено."
+        
+    chapter_row = find_chapter_row(title_start_row, chapter_number)
+    if chapter_row is None:
+        logger.warning(f"Розділ '{chapter_number}' не знайдено для тайтлу '{title_name}'.")
+        return "error", f"Розділ '{chapter_number}' не знайдено для тайтлу '{title_name}'."
+
+    try:
+        publish_col_index = COLUMN_MAP.get("Публікація-Статус")
+        if publish_col_index:
+            titles_sheet.update_cell(chapter_row, publish_col_index, "Опубліковано")
+            titles_sheet.update_cell(chapter_row, publish_col_index - 1, datetime.now().strftime("%d.%m.%Y"))
+            return "success", titles_sheet.cell(title_start_row, COLUMN_MAP["Тайтли"]).value
+        else:
+            return "error", "Не знайдено колонку 'Публікація-Статус'."
+    except Exception as e:
+        logger.error(f"Помилка при оновленні статусу публікації: {e}")
+        return "error", "Невідома помилка при оновленні."
+        
+def get_title_status_data(title_name):
+    """
+    Отримує всі дані по тайтлу для команди /status.
+    """
+    if not COLUMN_MAP:
+        logger.error("Карта колонок порожня. Неможливо отримати статус.")
+        return None, None
+    
+    start_row, end_row = find_title_block(title_name)
+    if start_row is None:
+        return None, None
+        
+    original_title = titles_sheet.cell(start_row, COLUMN_MAP["Тайтли"]).value
+    
+    data_range_start_row = start_row + 4
+    data_range = titles_sheet.range(data_range_start_row, 1, end_row, len(COLUMN_MAP))
+    
+    records = []
+    current_record = {}
+    
+    for cell in data_range:
+        col_key_base = "Розділ №"
+        
+        for key, col_idx in COLUMN_MAP.items():
+            if col_idx == cell.col:
+                col_key_base = key
+                break
+        
+        if cell.col == COLUMN_MAP["Розділ №"]:
+            if current_record:
+                records.append(current_record)
+            current_record = {"chapter": cell.value, "published": False}
+        
+        if col_key_base == "Публікація-Статус" and cell.value:
+            current_record["published"] = True
+        
+        role_key = None
+        for r_key, r_value in ROLE_MAPPING.items():
+            if r_value == col_key_base:
+                role_key = r_key
+                break
+        
+        if role_key:
+            current_record[role_key] = {
+                "status": cell.value,
+                "nickname": titles_sheet.cell(cell.row, cell.col + 1).value,
+                "date": titles_sheet.cell(cell.row, cell.col + 2).value
+            }
+
+    if current_record:
+        records.append(current_record)
+        
+    return original_title, records
