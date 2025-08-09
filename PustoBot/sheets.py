@@ -205,25 +205,28 @@ def find_title_block(title_name):
         normalized_name = normalize_title(title_name)
         
         # Завантажуємо всі значення з колонки Тайтли (A)
-        titles = titles_sheet.col_values(COLUMN_MAP["Тайтли"])
+        titles_col_values = titles_sheet.col_values(COLUMN_MAP["Тайтли"])
+        
+        # Знаходимо початок блоку
+        try:
+            start_index = titles_col_values.index(title_name)
+            start_row = start_index + 1
+        except ValueError:
+            logger.warning(f"Тайтл '{title_name}' не знайдено.")
+            return None, None
+            
+        # Знаходимо кінець блоку (наступний тайтл або кінець таблиці)
+        end_index = len(titles_col_values)
+        for i in range(start_index + 1, len(titles_col_values)):
+            if titles_col_values[i]: # Якщо комірка не порожня, це початок нового блоку
+                end_index = i
+                break
+        
+        end_row = end_index + 1
+        
+        logger.info(f"Знайдено тайтл '{title_name}' у рядку {start_row}. Блок закінчується на рядку {end_row}.")
+        return start_row, end_row
 
-        for i, cell_value in enumerate(titles):
-            if normalize_title(cell_value) == normalized_name:
-                start_row = i + 1
-                
-                # Знаходимо кінець блоку (наступний тайтл або кінець таблиці)
-                end_row = titles_sheet.row_count
-                for j in range(start_row + 1, titles_sheet.row_count + 1):
-                    cell = titles_sheet.cell(j, COLUMN_MAP["Тайтли"])
-                    if cell.value:
-                        end_row = j - 1
-                        break
-                
-                logger.info(f"Знайдено тайтл '{title_name}' у рядку {start_row}. Блок закінчується на рядку {end_row}.")
-                return start_row, end_row
-
-        logger.warning(f"Тайтл '{title_name}' не знайдено.")
-        return None, None
     except Exception as e:
         logger.error(f"Помилка при пошуку блоку тайтлу: {e}")
         return None, None
