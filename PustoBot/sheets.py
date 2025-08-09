@@ -217,8 +217,10 @@ def find_chapter_row_in_block(start_row, end_row, chapter_number):
     """Шукає рядок розділу всередині блоку тайтлу."""
     try:
         chapter_col = COLUMN_MAP["Розділ №"]
+        # Використовуємо gspread.utils.col_to_letter для перетворення номера колонки на літеру
+        chapter_col_letter = gspread.utils.col_to_letter(chapter_col)
         # Зчитуємо тільки колонку з номерами розділів в межах блоку
-        chapter_col_values = titles_sheet.range(f'{gspread.utils.col_to_a1(chapter_col)}{start_row + 1}:{gspread.utils.col_to_a1(chapter_col)}{end_row}')
+        chapter_col_values = titles_sheet.range(f'{chapter_col_letter}{start_row + 1}:{chapter_col_letter}{end_row}')
         for cell in chapter_col_values:
             if cell.value and cell.value.strip() == str(chapter_number):
                 return cell.row
