@@ -1,3 +1,4 @@
+# PustoBot/handlers.py
 import logging
 from telegram import Update
 from telegram.ext import ContextTypes
@@ -6,7 +7,8 @@ from .sheets import (
     update_title_table,
     append_log_row,
     load_nickname_map,
-    initialize_header_map
+    initialize_header_map,
+    NICKNAME_MAP
 )
 from thread import get_thread_title
 
@@ -32,17 +34,22 @@ async def process_input(update: Update, context: ContextTypes.DEFAULT_TYPE, text
         return
     
     title, chapter, role, nickname = result
+    
+    # Перевіряємо, чи є у користувача нікнейм
+    if nickname:
+        resolved_nickname = nickname
+    else:
+        # Шукаємо нікнейм у мапі за Telegram-тегом
+        telegram_tag = from_user.username.lower() if from_user.username else None
+        if telegram_tag in NICKNAME_MAP:
+            resolved_nickname = NICKNAME_MAP[telegram_tag][2]
+        else:
+            await update.message.reply_text(
+                "⚠️ Не вдалося визначити ваш нікнейм. Будь ласка, вкажіть його у повідомленні або зареєструйтеся командою `/register`."
+            )
+            return
 
-    # Оновлення: Завантажуємо актуальну мапу нікнеймів перед використанням
-    nickname_map = load_nickname_map()
-    resolved_nickname = nickname_map.get(from_user.full_name, nickname)
-
-    # Перевірка наявності нікнейму, якщо він не був вказаний
-    if not resolved_nickname:
-        await update.message.reply_text("⚠️ Не вдалося знайти ваш нікнейм. Будь ласка, зареєструйтесь за допомогою `/register` або вкажіть нікнейм в повідомленні.")
-        return
-
-    # Оновлення статусу в таблиці
+    # Оновлюємо таблицю
     success_update = update_title_table(title, chapter, role, resolved_nickname)
     
     if success_update:
@@ -66,9 +73,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     bot_username = f"@{context.bot.username}"
     text = message.text.strip()
     
-    # Видаляємо тег бота, якщо він є на початку
-    if text.lower().startswith(bot_username.lower()):
+    # Видаляємо тег бота з початку тексту
+    if text.startswith(bot_username):
         text = text[len(bot_username):].strip()
     
     thread_title = get_thread_title(message.message_thread_id)
+    
+    # Викликаємо загальну логіку
     await process_input(update, context, text, thread_title)

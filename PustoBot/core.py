@@ -1,3 +1,4 @@
+# PustoBot/core.py
 import re
 from collections import defaultdict
 
@@ -11,7 +12,7 @@ def parse_message(text, thread_title=None, bot_username=None):
     """
     if text is None:
         return None
-
+    
     stripped_text = text.strip()
     if not stripped_text:
         return None
@@ -32,35 +33,25 @@ def parse_message(text, thread_title=None, bot_username=None):
         return None
 
     # Спробуємо розпарсити формат для гілки: "Розділ Роль [Нік]"
-    if thread_title and len(parts) >= 2:
-        # Перевіряємо, чи перший елемент - це число, а другий - роль
-        if re.match(r"^\d+$", parts[0]) and parts[1].lower() in role_keywords:
-            chapter = parts[0]
-            role = parts[1].lower()
-            nickname = parts[2] if len(parts) > 2 else None
-            return thread_title, chapter, role, nickname
+    if thread_title and len(parts) >= 2 and re.match(r"^\d+$", parts[0]) and parts[1].lower() in role_keywords:
+        chapter = parts[0]
+        role = parts[1].lower()
+        nickname = parts[2] if len(parts) > 2 else None
+        return thread_title, chapter, role, nickname
 
-    # Спробуємо розпарсити повний формат: "Тайтл Розділ Роль [Нік]"
-    # Знаходимо кінець назви тайтлу
-    title_parts = []
+    # Спробуємо розпарсити повний формат: "Назва Тайтлу Розділ Роль [Нік]"
+    # Знаходимо індекс, де починається розділ
     i = 0
-    while i < len(parts):
-        # Якщо наступний елемент - це число, а за ним - роль, це кінець назви тайтлу
-        if re.match(r"^\d+$", parts[i]) and i + 1 < len(parts) and parts[i+1].lower() in role_keywords:
-            break
-        title_parts.append(parts[i])
+    while i < len(parts) - 2:
+        if re.match(r"^\d+$", parts[i]) and parts[i+1].lower() in role_keywords:
+            title = " ".join(parts[:i])
+            chapter = parts[i]
+            role = parts[i+1].lower()
+            nickname = parts[i+2] if len(parts) > i+2 else None
+            return title, chapter, role, nickname
         i += 1
-    
-    title = " ".join(title_parts).strip()
-    
-    if not title or i >= len(parts):
-        return None
 
-    chapter = parts[i]
-    role = parts[i+1].lower()
-    nickname = parts[i+2] if len(parts) > i + 2 else None
-    
-    return title, chapter, role, nickname
+    return None
 
 def parse_members_string(text):
     """
@@ -68,40 +59,12 @@ def parse_members_string(text):
     Формат: `клін - Nick1, переклад - Nick2`
     Повертає: (title, {role: [nick1, nick2], ...})
     """
-    parts = text.split()
-    if not parts:
-        return None, {}
-
-    title_parts = []
-    roles_map = defaultdict(list)
-    current_role = None
-    role_keywords = ["клін", "переклад", "тайп", "ред", "редакт"]
-
-    i = 0
-    # Спочатку парсимо назву тайтлу
-    while i < len(parts):
-        # Якщо знаходимо ключове слово ролі, то це кінець назви тайтлу
-        if parts[i].lower() in role_keywords:
-            break
-        title_parts.append(parts[i])
-        i += 1
+    parts = text.split(',')
+    roles_map = {}
+    for part in parts:
+        if '-' in part:
+            role, nick = [p.strip() for p in part.split('-', 1)]
+            roles_map[role.lower()] = nick
     
-    title = " ".join(title_parts).strip()
-    if not title:
-        return None, {}
-
-    # Парсимо ролі
-    while i < len(parts):
-        part = parts[i].lower()
-        if part in role_keywords:
-            current_role = part
-            # Якщо наступний елемент "-", пропускаємо його
-            if i + 1 < len(parts) and parts[i+1] == "-":
-                i += 1 
-            roles_map[current_role] = []
-        elif current_role and part != "-": # Якщо є поточна роль і це не роз'єднувальний символ
-            roles_map[current_role].append(part)
-        
-        i += 1
-    
-    return title, roles_map
+    # Ця функція більше не парсить тайтл, оскільки він береться з іншого місця.
+    return roles_map
