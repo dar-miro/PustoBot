@@ -33,15 +33,16 @@ async def process_input(update: Update, context: ContextTypes.DEFAULT_TYPE, text
     
     title, chapter, role, nickname = result
 
-    # Якщо нік не вказано, беремо його з даних користувача
-    if not nickname:
-        nickname = from_user.full_name
-
-    # Перевіряємо, чи є для користувача зареєстрований нік
+    # Оновлення: Завантажуємо актуальну мапу нікнеймів перед використанням
     nickname_map = load_nickname_map()
     resolved_nickname = nickname_map.get(from_user.full_name, nickname)
 
-    # Оновлюємо таблицю тайтлів
+    # Перевірка наявності нікнейму, якщо він не був вказаний
+    if not resolved_nickname:
+        await update.message.reply_text("⚠️ Не вдалося знайти ваш нікнейм. Будь ласка, зареєструйтесь за допомогою `/register` або вкажіть нікнейм в повідомленні.")
+        return
+
+    # Оновлення статусу в таблиці
     success_update = update_title_table(title, chapter, role, resolved_nickname)
     
     if success_update:
