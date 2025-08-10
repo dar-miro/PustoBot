@@ -1,4 +1,3 @@
-# PustoBot/handlers.py
 import logging
 from telegram import Update
 from telegram.ext import ContextTypes
@@ -8,7 +7,7 @@ from .sheets import (
     append_log_row,
     load_nickname_map,
     initialize_header_map,
-    NICKNAME_MAP
+    resolve_user_nickname
 )
 from thread import get_thread_title
 
@@ -23,8 +22,8 @@ async def process_input(update: Update, context: ContextTypes.DEFAULT_TYPE, text
     from_user = update.message.from_user
     bot_username = context.bot.username
     
-    # Викликаємо оновлену функцію парсингу
-    result = parse_message(text, thread_title, bot_username)
+    # Парсимо повідомлення
+    result = parse_message(text, thread_title, bot_username, from_user.username)
     
     if not result:
         await update.message.reply_text(
@@ -33,29 +32,24 @@ async def process_input(update: Update, context: ContextTypes.DEFAULT_TYPE, text
         )
         return
     
-    title, chapter, role, nickname = result
-    
-    # Перевіряємо, чи є у користувача нікнейм
-    if nickname:
-        resolved_nickname = nickname
-    else:
-        # Шукаємо нікнейм у мапі за Telegram-тегом
-        telegram_tag = from_user.username.lower() if from_user.username else None
-        if telegram_tag in NICKNAME_MAP:
-            resolved_nickname = NICKNAME_MAP[telegram_tag][2]
-        else:
-            await update.message.reply_text(
-                "⚠️ Не вдалося визначити ваш нікнейм. Будь ласка, вкажіть його у повідомленні або зареєструйтеся командою `/register`."
-            )
-            return
+    title, chapter, role, nickname_from_message = result
 
-    # Оновлюємо таблицю
-    success_update = update_title_table(title, chapter, role, resolved_nickname)
+    # Визначаємо, який нікнейм записувати в Журнал
+    # Зареєстрований нікнейм з таблиці "Користувачі"
+    registered_nickname = resolve_user_nickname(from_user.username)
+    # Якщо нікнейма в таблиці немає, використовуємо Telegram-тег
+    log_nickname = registered_nickname if registered_nickname else from_user.username
+
+    # Визначаємо, який нікнейм записувати в Тайтли (поруч з галочкою)
+    # Якщо у повідомленні був вказаний нік, використовуємо його
+    nickname_to_set = nickname_from_message
+    
+    success_update = update_title_table(title, chapter, role, nickname_to_set)
     
     if success_update:
-        # Логуємо дію
+        # Логуємо дію, використовуючи зареєстрований нікнейм
         telegram_tag = from_user.username if from_user.username else ""
-        append_log_row(from_user.full_name, telegram_tag, title, chapter, role, resolved_nickname)
+        append_log_row(from_user.full_name, telegram_tag, title, chapter, role, log_nickname)
         await update.message.reply_text(f"✅ Успішно оновлено: *{title}* (розділ *{chapter}*).", parse_mode="Markdown")
     else:
         await update.message.reply_text("⚠️ Не вдалося оновити статус. Можливо, тайтл або розділ не знайдено.")
