@@ -24,7 +24,7 @@ async def process_input(update: Update, context: ContextTypes.DEFAULT_TYPE, text
     bot_username = context.bot.username
     
     # Парсимо повідомлення
-    # ❗️ Виправлено: додано from_user.username як четвертий аргумент
+    # ❗️ Виправлено: from_user.username передається як четвертий аргумент
     result = parse_message(text, thread_title, bot_username, from_user.username)
     
     if not result:
@@ -43,9 +43,15 @@ async def process_input(update: Update, context: ContextTypes.DEFAULT_TYPE, text
     log_nickname = registered_nickname if registered_nickname else from_user.username
 
     # Визначаємо, який нікнейм записувати в Тайтли (поруч з галочкою)
-    # Якщо у повідомленні був вказаний нік, використовуємо його
-    nickname_to_set = nickname_from_message
+    # Якщо у повідомленні був вказаний нік, використовуємо його, інакше - зареєстрований
+    nickname_to_set = nickname_from_message if nickname_from_message else registered_nickname
     
+    if not nickname_to_set:
+        await update.message.reply_text(
+            "⚠️ Не вдалося визначити ваш нікнейм. Будь ласка, вкажіть його у повідомленні або зареєструйтеся командою `/register`."
+        )
+        return
+
     success_update = update_title_table(title, chapter, role, nickname_to_set)
     
     if success_update:
