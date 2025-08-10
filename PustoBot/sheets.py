@@ -6,7 +6,6 @@ import re
 import logging
 import os
 import json
-from collections import defaultdict
 import requests
 
 # --- Налаштування та Ініціалізація ---
@@ -56,7 +55,6 @@ def initialize_header_map():
 
         COLUMN_MAP = {}
 
-        # 🆕 Оновлено: більш надійний спосіб пошуку базових колонок
         role_base_indices = {}
         for i, header in enumerate(header_row_1):
             if header.strip() in ROLE_MAPPING.values():
@@ -77,21 +75,17 @@ def initialize_header_map():
             logger.error(f"Не вдалося знайти ключові заголовки: {e}")
             return False
 
-        # Заповнюємо карту для кожної ролі
         role_names_list = ["Клін", "Переклад", "Тайп", "Редакт"]
         for role_name in role_names_list:
             if role_name in role_base_indices:
                 col_start_index = role_base_indices[role_name]
                 
-                # Знаходимо кінець блоку для поточної ролі
                 col_end_index = len(header_row_1)
                 for next_role in role_names_list:
                     if next_role != role_name and next_role in role_base_indices and role_base_indices[next_role] > col_start_index:
                         col_end_index = min(col_end_index, role_base_indices[next_role])
                 
-                # Тепер знаходимо підзаголовки
                 try:
-                    # Шукаємо підзаголовки "Нік", "Дата", "Статус"
                     sub_header_slice_row3 = header_row_3[col_start_index:col_end_index]
                     sub_header_slice_row4 = header_row_4[col_start_index:col_end_index]
                     
@@ -107,7 +101,6 @@ def initialize_header_map():
                 except ValueError as e:
                     logger.warning(f"Не вдалося знайти підзаголовки для ролі '{role_name}': {e}")
         
-        # Заповнюємо карту для "Публікація"
         if "Публікація" in role_base_indices:
             publish_col_start = role_base_indices["Публікація"]
             publish_slice_row3 = header_row_3[publish_col_start:]
@@ -141,7 +134,6 @@ def load_nickname_map():
             logger.warning("Аркуш 'Користувачі' порожній.")
             return False
 
-        # Мапа Telegram-тег -> Нік
         NICKNAME_MAP = {row[1].lower(): row[2] for row in users[1:] if len(row) > 2 and row[1] and row[2]}
         logger.info("Мапа нікнеймів успішно завантажена.")
         return True
@@ -150,16 +142,13 @@ def load_nickname_map():
         return False
 
 def connect_to_google_sheets():
-    """Підключається до Google Sheets і ініціалізує глобальні змінні."""
+    """
+    Підключається до Google Sheets, використовуючи файл credentials.json.
+    """
     global client, main_spreadsheet, log_sheet, titles_sheet, users_sheet
     try:
-        creds_json = os.environ.get("GOOGLE_CREDENTIALS_JSON")
-        if not creds_json:
-            logger.error("Змінна оточення 'GOOGLE_CREDENTIALS_JSON' не встановлена.")
-            return False
-            
-        creds_dict = json.loads(creds_json)
-        creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
+        # 🆕 Змінено: Тепер код читає файл напряму
+        creds = ServiceAccountCredentials.from_json_keyfile_name('credentials.json', scope)
         client = gspread.authorize(creds)
         logger.info("Авторизація Google Sheets успішна.")
         
@@ -178,6 +167,9 @@ def connect_to_google_sheets():
             return False
             
         return True
+    except FileNotFoundError:
+        logger.error("Помилка: Файл 'credentials.json' не знайдено.")
+        return False
     except gspread.exceptions.SpreadsheetNotFound:
         logger.error("Помилка: Не знайдено спредшит з назвою 'DataBase'. Перевірте назву.")
         return False
@@ -262,18 +254,15 @@ def update_title_table(title_name, chapter_number, role, nickname_to_set=None):
         role_base_name = ROLE_MAPPING[role]
         updates = []
         
-        # 🆕 Виправлено: Формуємо назву колонки для нікнейму, використовуючи ROLE_MAPPING
         if nickname_to_set and f"{role_base_name}-Нік" in COLUMN_MAP:
             updates.append({'range': gspread.utils.rowcol_to_a1(chapter_row, COLUMN_MAP[f"{role_base_name}-Нік"]), 'values': [[nickname_to_set]]})
             logger.info(f"Оновлено нікнейм для ролі '{role_base_name}': {nickname_to_set}")
         
-        # 🆕 Виправлено: Формуємо назву колонки для дати
         if f"{role_base_name}-Дата" in COLUMN_MAP:
             current_date = datetime.now().strftime("%d.%m.%Y")
             updates.append({'range': gspread.utils.rowcol_to_a1(chapter_row, COLUMN_MAP[f"{role_base_name}-Дата"]), 'values': [[current_date]]})
             logger.info(f"Оновлено дату для ролі '{role_base_name}': {current_date}")
             
-        # 🆕 Виправлено: Формуємо назву колонки для статусу
         if f"{role_base_name}-Статус" in COLUMN_MAP:
             updates.append({'range': gspread.utils.rowcol_to_a1(chapter_row, COLUMN_MAP[f"{role_base_name}-Статус"]), 'values': [[STATUS_DONE]]})
             logger.info(f"Оновлено статус для ролі '{role_base_name}': {STATUS_DONE}")
