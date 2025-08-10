@@ -135,6 +135,7 @@ def load_nickname_map():
             logger.warning("Аркуш 'Користувачі' порожній.")
             return False
 
+        # Мапа Telegram-тег -> Нік
         NICKNAME_MAP = {row[1].lower(): row[2] for row in users[1:] if len(row) > 2 and row[1] and row[2]}
         logger.info("Мапа нікнеймів успішно завантажена.")
         return True
@@ -217,7 +218,6 @@ def find_chapter_row_in_block(start_row, end_row, chapter_number):
     """Шукає рядок розділу всередині блоку тайтлу."""
     try:
         chapter_col = COLUMN_MAP["Розділ №"]
-        # Створюємо A1-нотацію для діапазону комірок
         range_string = f"{gspread.utils.rowcol_to_a1(start_row + 1, chapter_col)}:{gspread.utils.rowcol_to_a1(end_row, chapter_col)}"
         chapter_col_values = titles_sheet.range(range_string)
         for cell in chapter_col_values:
@@ -228,8 +228,11 @@ def find_chapter_row_in_block(start_row, end_row, chapter_number):
         logger.error(f"Помилка при пошуку рядка розділу: {e}")
         return None
 
-def update_title_table(title_name, chapter_number, role, nickname=None):
-    """Оновлює статус та дату для заданого тайтлу, розділу та ролі, а також записує нік виконавця."""
+def update_title_table(title_name, chapter_number, role, nickname_to_set=None):
+    """
+    Оновлює статус та дату для заданого тайтлу, розділу та ролі.
+    Нікнейм виконавця записується, лише якщо він був вказаний в команді.
+    """
     if not titles_sheet:
         logger.error("Аркуш 'Тайтли' не ініціалізовано.")
         return False
@@ -238,7 +241,6 @@ def update_title_table(title_name, chapter_number, role, nickname=None):
         logger.warning(f"Невідома роль: {role}")
         return False
         
-    # Оновлюємо мапу нікнеймів, щоб врахувати нових користувачів
     load_nickname_map()
         
     start_row, end_row = find_title_block(title_name)
@@ -254,8 +256,9 @@ def update_title_table(title_name, chapter_number, role, nickname=None):
         role_base_name = ROLE_MAPPING[role]
         updates = []
         
-        if nickname and f"{role_base_name}-Нік" in COLUMN_MAP:
-            updates.append({'range': gspread.utils.rowcol_to_a1(chapter_row, COLUMN_MAP[f"{role_base_name}-Нік"]), 'values': [[nickname]]})
+        # Оновлюємо нікнейм, тільки якщо він був вказаний у команді
+        if nickname_to_set and f"{role_base_name}-Нік" in COLUMN_MAP:
+            updates.append({'range': gspread.utils.rowcol_to_a1(chapter_row, COLUMN_MAP[f"{role_base_name}-Нік"]), 'values': [[nickname_to_set]]})
         
         if f"{role_base_name}-Дата" in COLUMN_MAP:
             current_date = datetime.now().strftime("%d.%m.%Y")
@@ -302,7 +305,6 @@ def set_publish_status(title_name, chapter_number):
         logger.error(f"Помилка при оновленні статусу публікації: {e}")
         return "error", f"Помилка при оновленні статусу публікації: {e}"
 
-
 def get_title_status_data(title_name):
     """Отримує всі дані по тайтлу для команди /status."""
     if not titles_sheet or not COLUMN_MAP:
@@ -316,9 +318,7 @@ def get_title_status_data(title_name):
     original_title = titles_sheet.cell(start_row, COLUMN_MAP["Тайтли"]).value
     
     data_range_start_row = start_row + 1
-    # Використовуємо rowcol_to_a1 для отримання кінцевої комірки діапазону
-    end_cell = gspread.utils.rowcol_to_a1(end_row, titles_sheet.col_count)
-    data_range = titles_sheet.range(f'A{data_range_start_row}:{end_cell}')
+    data_range = titles_sheet.range(f'A{data_range_start_row}:{gspread.utils.rowcol_to_a1(end_row, titles_sheet.col_count)}')
     
     status_report = []
     
