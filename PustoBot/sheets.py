@@ -217,9 +217,7 @@ def find_chapter_row_in_block(start_row, end_row, chapter_number):
     """Шукає рядок розділу всередині блоку тайтлу."""
     try:
         chapter_col = COLUMN_MAP["Розділ №"]
-        # Використовуємо gspread.utils.col_to_letter для перетворення номера колонки на літеру
         chapter_col_letter = gspread.utils.col_to_letter(chapter_col)
-        # Зчитуємо тільки колонку з номерами розділів в межах блоку
         chapter_col_values = titles_sheet.range(f'{chapter_col_letter}{start_row + 1}:{chapter_col_letter}{end_row}')
         for cell in chapter_col_values:
             if cell.value and cell.value.strip() == str(chapter_number):
@@ -238,6 +236,9 @@ def update_title_table(title_name, chapter_number, role, nickname=None):
     if role not in ROLE_MAPPING:
         logger.warning(f"Невідома роль: {role}")
         return False
+        
+    # Оновлюємо мапу нікнеймів, щоб врахувати нових користувачів
+    load_nickname_map()
         
     start_row, end_row = find_title_block(title_name)
     if not start_row:
@@ -270,6 +271,12 @@ def update_title_table(title_name, chapter_number, role, nickname=None):
         logger.error(f"Помилка при оновленні таблиці: {e}")
         return False
 
+def resolve_user_nickname(telegram_tag):
+    """
+    Повертає нікнейм користувача з таблиці, використовуючи його Telegram-тег.
+    """
+    normalized_tag = telegram_tag.lower().lstrip('@')
+    return NICKNAME_MAP.get(normalized_tag)
 
 def set_publish_status(title_name, chapter_number):
     """Оновлює статус публікації розділу."""
