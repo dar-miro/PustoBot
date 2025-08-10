@@ -1,3 +1,4 @@
+# PustoBot/handlers.py
 import logging
 from telegram import Update
 from telegram.ext import ContextTypes
@@ -23,6 +24,7 @@ async def process_input(update: Update, context: ContextTypes.DEFAULT_TYPE, text
     bot_username = context.bot.username
     
     # Парсимо повідомлення
+    # ❗️ Виправлено: додано from_user.username як четвертий аргумент
     result = parse_message(text, thread_title, bot_username, from_user.username)
     
     if not result:
