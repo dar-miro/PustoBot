@@ -35,23 +35,18 @@ def parse_message(text, thread_title=None, bot_username=None, from_user_tag=None
     found_chapter = None
     found_nickname = None
     other_parts = []
-    
-    # 🆕 Виправлено: Ітеруємо у зворотному порядку, щоб спочатку знайти нікнейм, потім роль, а потім розділ
-    for part in reversed(parts):
+
+    for part in parts:
         lower_part = part.lower()
-        if not found_nickname and not found_role and not re.match(r'^\d+$', part) and not part.startswith('@'):
-            # Перше слово в кінці, яке не є розділом чи тегом, вважаємо нікнеймом
-            found_nickname = part
-        elif not found_role and lower_part in role_keywords:
+        if lower_part in role_keywords:
             found_role = lower_part
-            found_nickname = None  # Скидаємо нікнейм, якщо він був до ролі
-        elif not found_chapter and re.match(r'^\d+$', part):
+        elif re.match(r'^\d+$', part):
             found_chapter = part
+        elif found_role and not found_nickname: # Нікнейм іде одразу після ролі
+            found_nickname = part
         else:
             other_parts.append(part)
-    
-    other_parts.reverse()  # Повертаємо інші частини у правильному порядку
-    
+
     title = " ".join(other_parts)
     if thread_title and not title:
         title = thread_title
