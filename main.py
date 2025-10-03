@@ -14,7 +14,7 @@ from telegram.ext import (
 
 # Імпорти з ваших модулів, враховуючи структуру
 from PustoBot.handlers import start_command, handle_message, add_command
-from thread import get_thread_handler
+from thread import get_thread_handler, get_threadnum_handler # Додано імпорт get_threadnum_handler
 from register import get_register_handler
 from publish import publish_command
 from status import status_command
@@ -77,6 +77,7 @@ async def main():
     bot_app.add_handler(CommandHandler("publish", publish_command_wrapper))
     
     bot_app.add_handler(get_thread_handler())
+    bot_app.add_handler(get_threadnum_handler()) # Додано новий хендлер
     bot_app.add_handler(get_register_handler(main_spreadsheet)) 
 
     # Обробник для звичайних повідомлень
