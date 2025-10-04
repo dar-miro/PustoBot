@@ -1,13 +1,18 @@
 import logging
 import re
 import gspread
+import asyncio # Додано
+import os # Додано
+from aiohttp import web # Додано
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 
 # --- НАЛАШТУВАННЯ: ВКАЖІТЬ ВАШІ ДАНІ ТУТ ---
 
 # Вставте токен вашого Telegram-бота
-TELEGRAM_BOT_TOKEN = "7392593867:AAHSNWTbZxS4BfEKJa3KG7SuhK2G9R5kKQA"
+TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "7392593867:AAHSNWTbZxS4BfEKJa3KG7SuhK2G9R5kKQA") # Зчитування з ENVs
+# URL для встановлення вебхука.
+WEBHOOK_URL = os.environ.get("WEBHOOK_URL", "https://your-app-name.onrender.com") # Зчитування з ENVs
 
 # Назва файлу з ключами доступу до Google API
 GOOGLE_CREDENTIALS_FILE = 'credentials.json'
@@ -43,6 +48,7 @@ class SheetsHelper:
 
     def _get_or_create_worksheet(self, title_name):
         """Отримує або створює аркуш для тайтлу."""
+        if not self.spreadsheet: raise ConnectionError("Немає підключення до Google Sheets.")
         try:
             return self.spreadsheet.worksheet(title_name)
         except gspread.WorksheetNotFound:
@@ -203,19 +209,78 @@ async def update_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
     response = sheets.update_chapter_status(title, chapter, role, status_char)
     await update.message.reply_text(response)
 
-def main():
-    """Основна функція для запуску бота."""
-    application = ApplicationBuilder().token(TELEGRAM_BOT_TOKEN).build()
+# --- АСИНХРОННИЙ ЗАПУСК ДЛЯ WEBHOOKS ---
 
-    application.add_handler(CommandHandler("start", start_command))
-    application.add_handler(CommandHandler("help", help_command))
-    application.add_handler(CommandHandler("register", register))
-    application.add_handler(CommandHandler("newchapter", new_chapter))
-    application.add_handler(CommandHandler("status", status))
-    application.add_handler(CommandHandler("updatestatus", update_status))
+async def main():
+    """Основна асинхронна функція для запуску бота."""
+    
+    # 1. Створення Application
+    bot_app = ApplicationBuilder().token(TELEGRAM_BOT_TOKEN).build()
+    
+    # Додавання обробників
+    bot_app.add_handler(CommandHandler("start", start_command))
+    bot_app.add_handler(CommandHandler("help", help_command))
+    bot_app.add_handler(CommandHandler("register", register))
+    bot_app.add_handler(CommandHandler("newchapter", new_chapter))
+    bot_app.add_handler(CommandHandler("status", status))
+    bot_app.add_handler(CommandHandler("updatestatus", update_status))
+    
+    # 2. Ініціалізація та запуск бота для вебхуків
+    await bot_app.initialize()
+    await bot_app.start() # Запускає внутрішні цикли Application
+    
+    # Перевірка, що Application має чергу для оновлень
+    if not hasattr(bot_app, 'update_queue'):
+        logger.error("bot_app has no update_queue attribute!")
+        return
+        
+    # 3. Налаштування веб-сервера aiohttp
+    aio_app = web.Application()
+    aio_app['bot_app'] = bot_app # Зберігаємо Application у додатку aiohttp
+    
+    async def webhook_handler(request):
+        """Обробник вхідних POST-запитів від Telegram."""
+        bot_app = request.app['bot_app']
+        # Отримання та десеріалізація оновлення з тіла запиту
+        try:
+            update = Update.de_json(await request.json(), bot_app.bot)
+        except Exception as e:
+            logger.error(f"Помилка десеріалізації оновлення: {e}")
+            return web.Response(status=400)
+            
+        # Поміщення оновлення в чергу Application
+        await bot_app.update_queue.put(update)
+        return web.Response() # Telegram очікує 200 OK
+    
+    # Встановлення вебхука на сервері Telegram
+    webhook_path = '/' + TELEGRAM_BOT_TOKEN
+    full_webhook_url = WEBHOOK_URL.rstrip('/') + webhook_path
+    
+    await bot_app.bot.set_webhook(url=full_webhook_url)
+    logger.info(f"Встановлено Webhook на: {full_webhook_url}")
+    
+    # 4. Налаштування маршрутів aiohttp
+    aio_app.add_routes([
+        web.get('/health', lambda r: web.Response(text='OK')), # Перевірка працездатності
+        web.post(webhook_path, webhook_handler), # Обробник для Telegram
+    ])
 
-    logger.info("Бот запускається...")
-    application.run_polling()
+    # 5. Запуск веб-сервера
+    runner = web.AppRunner(aio_app)
+    await runner.setup()
+    
+    port = int(os.environ.get("PORT", 8080))
+    # '0.0.0.0' дозволяє слухати на всіх доступних інтерфейсах (важливо для Render)
+    site = web.TCPSite(runner, '0.0.0.0', port) 
+    logger.info(f"Starting web server on port {port}")
+    await site.start()
 
-if __name__ == '__main__':
-    main()
+    # Запобігання виходу головного циклу
+    while True:
+        await asyncio.sleep(3600)
+
+if __name__ == "__main__":
+    try:
+        asyncio.run(main())
+    except Exception as e:
+        logger.error(f"Error in main execution: {e}")
