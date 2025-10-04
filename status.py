@@ -1,13 +1,14 @@
+# status.py
 import logging
 from telegram import Update
 from telegram.ext import ContextTypes
 from PustoBot.sheets import get_title_status_data
-from thread import get_thread_number # Новий імпорт
+from thread import get_thread_number 
 
 logger = logging.getLogger(__name__)
 
 async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Надає статус усіх розділів для вказаного тайтлу."""
+    """Надає статус усіх розділів для вказаного тайтлу (завдання 4)."""
     message = update.message
     text = message.text[len("/status "):].strip()
     title_identifier = text
@@ -31,24 +32,33 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"📊 Для тайтлу '{original_title}' ще немає жодного розділу.")
         return
 
-    response_lines = [f"📊 *Статус тайтлу '{original_title}':*\n"]
+    response_lines = [f"📊 *Статус тайтлу '{original_title}':*\\n"]
     
     for item in status_report:
         chapter_number = item['chapter']
+        
         # Ролі
         role_statuses = []
         role_order = ["клін", "переклад", "тайп", "редакт"]
         for role_key in role_order:
-            status = item['roles'].get(role_key)
-            if status is not None:
-                status_char = "✅" if status else "❌"
-                role_statuses.append(f"{role_key}: {status_char}")
+            role_info = item['roles'].get(role_key)
+            if role_info is not None:
+                status_char = "✅" if role_info['status'] else "❌"
+                person = role_info['person']
+                person_text = f" ({person})" if person else ""
+                
+                # Формат: роль: ✅ (Нік)
+                role_statuses.append(f"{role_key.capitalize()}: {status_char}{person_text}")
         
         roles_text = " | ".join(role_statuses)
         
-        # Статус публікації
-        status_pub = "✅ Опубліковано" if item['published'] else "❌ В роботі"
+        # Загальний статус та дедлайн
+        published_status = "✅ Опубліковано" if item['published'] else "❌ В роботі"
+        deadline = item.get('deadline', '—') 
         
-        response_lines.append(f"*{chapter_number}* — {status_pub}\n  _({roles_text})_")
+        response_lines.append(f"\\n*Розділ {chapter_number}:*")
+        response_lines.append(f"  {roles_text}")
+        response_lines.append(f"  Дедлайн: {deadline}")
+        response_lines.append(f"  Статус: {published_status}")
 
     await update.message.reply_text("\n".join(response_lines), parse_mode="Markdown")
