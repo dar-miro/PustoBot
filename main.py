@@ -12,7 +12,7 @@ from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 # Вставте токен вашого Telegram-бота
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "7392593867:AAHSNWTbZxS4BfEKJa3KG7SuhK2G9R5kKQA") # Зчитування з ENVs
 # URL для встановлення вебхука.
-WEBHOOK_URL = os.environ.get("WEBHOOK_URL", "https://your-app-name.onrender.com") # Зчитування з ENVs
+WEBHOOK_URL = os.environ.get("WEBHOOK_URL", "https://pustobot.onrender.com/") # Зчитування з ENVs
 
 # Назва файлу з ключами доступу до Google API
 GOOGLE_CREDENTIALS_FILE = 'credentials.json'
@@ -131,7 +131,7 @@ class SheetsHelper:
             headers = worksheet.row_values(1)
             col_index = headers.index(col_name) + 1
             
-            new_status = 'TRUE' if status_char == '+' else 'FALSE'
+            new_status = '✅' if status_char == '+' else '❌'
             worksheet.update_cell(cell.row, col_index, new_status)
             
             return f"✅ Статус оновлено: '{title_name}', розділ {chapter_number}, роль {role} → {status_char}"
