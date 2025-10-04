@@ -32,7 +32,6 @@ ROLE_TO_COLUMN_BASE = {
     "клін": "Клін",
     "переклад": "Переклад",
     "тайп": "Тайп",
-    "редакт": "Редакт",
     "ред": "Редакт", # Додаємо синонім
 }
 # Публікація
@@ -52,34 +51,79 @@ SHEET_HEADERS.extend([f'{PUBLISH_COLUMN_BASE}-Нік', f'{PUBLISH_COLUMN_BASE}-�
 
 # Фінальна структура (приклад): ['Розділ', 'Клін-Нік', 'Клін-Дата', 'Клін-Статус', 'Переклад-Нік', 'Переклад-Дата', 'Переклад-Статус', ...]
 
+# ОНОВЛЕНО: Заголовки для аркуша "Журнал"
+LOG_HEADERS = ['Дата', 'Telegram-Нік', 'Нік', 'Тайтл', '№ Розділу', 'Роль']
 
 class SheetsHelper:
     """Клас для інкапсуляції всієї роботи з Google Sheets."""
     def __init__(self, credentials_file, spreadsheet_name):
+        self.spreadsheet = None
+        self.log_sheet = None
+        self.users_sheet = None
         try:
             gc = gspread.service_account(filename=credentials_file)
             self.spreadsheet = gc.open(spreadsheet_name)
+            self._initialize_sheets()
         except Exception as e:
             logger.error(f"Не вдалося підключитися до Google Sheets: {e}")
-            self.spreadsheet = None
 
-    def _get_or_create_worksheet(self, title_name):
-        """Отримує або створює аркуш для тайтлу."""
+    def _get_or_create_worksheet(self, title_name, headers=None):
+        """Отримує або створює аркуш за назвою з опціональними заголовками."""
         if not self.spreadsheet: raise ConnectionError("Немає підключення до Google Sheets.")
         try:
             return self.spreadsheet.worksheet(title_name)
         except gspread.WorksheetNotFound:
-            logger.info(f"Створення нового аркуша для тайтлу: {title_name}")
-            # Встановлюємо кількість колонок відповідно до нової структури
-            worksheet = self.spreadsheet.add_worksheet(title=title_name, rows="100", cols=str(len(SHEET_HEADERS) + 2)) 
-            worksheet.append_row(SHEET_HEADERS)
+            logger.info(f"Створення нового аркуша: {title_name}")
+            cols = len(headers) if headers else 20
+            worksheet = self.spreadsheet.add_worksheet(title=title_name, rows="100", cols=str(cols)) 
+            if headers:
+                worksheet.append_row(headers)
             return worksheet
+            
+    def _initialize_sheets(self):
+        """Ініціалізує основні аркуші (Журнал, Users, Тайтли)."""
+        # Ініціалізація Журналу
+        try:
+            self.log_sheet = self._get_or_create_worksheet("Журнал", LOG_HEADERS)
+        except Exception as e:
+            logger.error(f"Не вдалося ініціалізувати аркуш 'Журнал': {e}")
+            self.log_sheet = None
+            
+        # Ініціалізація Користувачів
+        try:
+            self.users_sheet = self._get_or_create_worksheet("Користувачі", ['Telegram-ID', 'Теґ', 'Нік', 'Ролі'])
+        except Exception as e:
+            logger.error(f"Не вдалося ініціалізувати аркуш 'Користувачі': {e}")
+            self.users_sheet = None
+            
+        # Аркуш "Тайтли" не ініціалізуємо тут, він буде створений по потребі через _get_or_create_worksheet
+
+    def _log_action(self, telegram_tag, nickname, title, chapter, role):
+        """Додає запис про операцію до аркуша 'Журнал'."""
+        if self.log_sheet:
+            try:
+                current_datetime = datetime.now().strftime("%d.%m.%Y %H:%M:%S")
+                # Структура: Дата, Telegram-Нік, Нік, Тайтл, № Розділу, Роль
+                log_row = [
+                    current_datetime, 
+                    telegram_tag, 
+                    nickname, 
+                    title, 
+                    str(chapter), 
+                    role
+                ]
+                self.log_sheet.append_row(log_row)
+            except Exception as e:
+                logger.error(f"Помилка логування дії: {e}")
+        else:
+            logger.warning("Аркуш 'Журнал' не ініціалізовано, логування пропущено.")
+
 
     def register_user(self, user_id, username, nickname):
-        """Реєструє або оновлює користувача на аркуші 'Users'."""
-        if not self.spreadsheet: return "Помилка підключення до таблиці."
+        """Реєструє або оновлює користувача на аркуші 'Користувачі'."""
+        if not self.users_sheet: return "Помилка підключення до таблиці 'Користувачі'."
         try:
-            users_sheet = self.spreadsheet.worksheet("Users")
+            users_sheet = self.users_sheet
             # Знаходимо користувача за ID (колонка 1)
             user_ids = users_sheet.col_values(1)
             
@@ -91,7 +135,7 @@ class SheetsHelper:
                 users_sheet.update_cell(row_index, 3, nickname)
                 return f"✅ Ваші дані оновлено. Нікнейм: {nickname}"
             else:
-                # Таблиця 'Користувачі': Telegram-нік (ID), Теґ, Нік, Ролі
+                # Таблиця 'Користувачі': Telegram-ID, Теґ, Нік, Ролі
                 users_sheet.append_row([str(user_id), username, nickname, '']) 
                 return f"✅ Вас успішно зареєстровано. Нікнейм: {nickname}"
         except Exception as e:
@@ -102,20 +146,33 @@ class SheetsHelper:
         """Додає новий розділ до відповідного аркуша тайтлу."""
         if not self.spreadsheet: return "Помилка підключення до таблиці."
         try:
-            worksheet = self._get_or_create_worksheet(title_name)
-            chapters = worksheet.col_values(1)
+            # Використовуємо _get_or_create_worksheet з заголовками для Тайтлів
+            worksheet = self._get_or_create_worksheet(title_name, SHEET_HEADERS)
+            
+            # Якщо аркуш щойно створено, то len(all_values) буде 1 (заголовки). 
+            # Якщо ні, то читаємо всі значення для перевірки дублікатів.
+            all_values = worksheet.get_all_values()
+            chapters = [row[0] for row in all_values[1:] if row] # Перша колонка - розділ
+            
             if str(chapter_number) in chapters:
                 return f"⚠️ Розділ {chapter_number} для '{title_name}' вже існує."
             
             # Створюємо рядок: Розділ, потім для кожної ролі [Нік, Дата, Статус='❌']
             new_row_data = [str(chapter_number)] # Розділ
             
-            for _ in ROLE_TO_COLUMN_BASE:
+            num_roles = len(ROLE_TO_COLUMN_BASE)
+            # Додаємо дані для основних ролей (Нік, Дата, Статус)
+            for _ in range(num_roles):
                  new_row_data.extend(['', '', '❌']) # 'Нік', 'Дата', 'Статус'
             
+            # Додаємо дані для Публікації
             new_row_data.extend(['', '', '❌']) # Публікація: 'Нік', 'Дата', 'Статус'
 
             worksheet.append_row(new_row_data)
+            
+            # Логування
+            self._log_action(telegram_tag="Bot", nickname="System", title=title_name, chapter=chapter_number, role="Додано розділ")
+
             return f"✅ Додано розділ {chapter_number} до тайтлу '{title_name}'."
         except Exception as e:
             logger.error(f"Помилка додавання розділу: {e}")
@@ -181,8 +238,8 @@ class SheetsHelper:
             logger.error(f"Помилка отримання статусу: {e}")
             return "❌ Сталася помилка при отриманні статусу."
 
-    def update_chapter_status(self, title_name, chapter_number, role, status_char, nickname):
-        """Оновлює статус, дату та нік для конкретної ролі."""
+    def update_chapter_status(self, title_name, chapter_number, role, status_char, nickname, telegram_tag):
+        """Оновлює статус, дату та нік для конкретної ролі та логує дію."""
         if not self.spreadsheet: return "Помилка підключення до таблиці."
         
         role_lower = role.lower()
@@ -234,8 +291,11 @@ class SheetsHelper:
                 worksheet.update_cell(row_index, date_index, '')
                 worksheet.update_cell(row_index, nick_index, '')
 
+            # 3. Логуємо дію
+            self._log_action(telegram_tag, nickname, title_name, chapter_number, role_lower)
+
             return f"✅ Статус оновлено: '{title_name}', розділ {chapter_number}, роль {role_lower} → {status_char} (Виконавець: {nickname})"
-        
+            
         except gspread.WorksheetNotFound:
             return f"⚠️ Тайтл '{title_name}' не знайдено."
         except ValueError as ve: 
@@ -314,16 +374,21 @@ async def update_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chapter, role, status_char = args[0], args[1], args[2]
     
     # Визначаємо нік: якщо передано 4 аргументи, беремо останній. Інакше - Telegram-нік.
+    user = update.effective_user
     if len(args) == 4:
         nickname = args[3] # Нік вказано в команді
     else:
         # Нік береться з Telegram-профілю користувача
-        nickname = update.effective_user.first_name 
-        if update.effective_user.username:
-            nickname = f"@{update.effective_user.username}"
+        nickname = user.first_name 
+        if user.username:
+            nickname = f"@{user.username}"
+            
+    # Telegram-тег для логування
+    telegram_tag = f"@{user.username}" if user.username else user.full_name
 
     sheets = SheetsHelper(GOOGLE_CREDENTIALS_FILE, SPREADSHEET_NAME)
-    response = sheets.update_chapter_status(title, chapter, role, status_char, nickname)
+    # Передаємо telegram_tag до методу update_chapter_status
+    response = sheets.update_chapter_status(title, chapter, role, status_char, nickname, telegram_tag)
     await update.message.reply_text(response)
 
 
@@ -399,6 +464,14 @@ async def main():
 
 if __name__ == "__main__":
     try:
-        asyncio.run(main())
+        # Ініціалізація SheetsHelper перед запуском
+        # Це забезпечить створення аркуша 'Журнал' і 'Користувачі'
+        # Хоча краще це робити всередині main, як зараз є.
+        # Просто перевірка на помилки.
+        sheets_check = SheetsHelper(GOOGLE_CREDENTIALS_FILE, SPREADSHEET_NAME)
+        if sheets_check.spreadsheet is None:
+             logger.error("Початкове підключення до Google Sheets провалилося. Бот не запускається.")
+        else:
+             asyncio.run(main())
     except Exception as e:
         logger.error(f"Error in main execution: {e}")
