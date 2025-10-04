@@ -6,7 +6,7 @@ import os
 from aiohttp import web
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
-from datetime import datetime # Додано для отримання поточної дати
+from datetime import datetime
 
 # --- НАЛАШТУВАННЯ: ВКАЖІТЬ ВАШІ ДАНІ ТУТ ---
 
@@ -27,23 +27,31 @@ SPREADSHEET_NAME = "PustoBot"
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Словник для ролей та їх відповідних колонок (ОНОВЛЕНО)
-# Тепер кожна роль має колонку для СТАТУСУ та колонку для ДАТИ
+# Словник для ролей
 ROLE_TO_COLUMN_BASE = {
     "клін": "Клін",
     "переклад": "Переклад",
     "тайп": "Тайп",
     "редакт": "Редакт",
 }
-# Публікація поки залишається єдиною, як у вашому прикладі
-PUBLISH_COLUMN = "Публікація"
+# ОНОВЛЕНО: Публікація тепер також має пару Статус/Дата
+PUBLISH_COLUMN_BASE = "Публікація"
 
-# ОНОВЛЕНО: Тепер заголовки включають пари 'Статус' та 'Дата'
+# ОНОВЛЕНО: Нова структура заголовків
 SHEET_HEADERS = ['Розділ']
+# Додаємо колонку для Ніку виконавця, який повинен бути поруч з розділом
+SHEET_HEADERS.append('Нік')
+
+# Додаємо Дата/Статус для кожної ролі
 for role in ROLE_TO_COLUMN_BASE.values():
-    SHEET_HEADERS.extend([f'{role}-Статус', f'{role}-Дата'])
-SHEET_HEADERS.append(PUBLISH_COLUMN)
-# SHEET_HEADERS тепер виглядає так: ['Розділ', 'Клін-Статус', 'Клін-Дата', 'Переклад-Статус', 'Переклад-Дата', 'Тайп-Статус', 'Тайп-Дата', 'Редакт-Статус', 'Редакт-Дата', 'Публікація']
+    # Порядок: Дата, Статус
+    SHEET_HEADERS.extend([f'{role}-Дата', f'{role}-Статус'])
+
+# Додаємо Публікацію
+SHEET_HEADERS.extend([f'{PUBLISH_COLUMN_BASE}-Дата', f'{PUBLISH_COLUMN_BASE}-Статус'])
+
+# Фінальна структура: ['Розділ', 'Нік', 'Клін-Дата', 'Клін-Статус', 'Переклад-Дата', 'Переклад-Статус', 'Тайп-Дата', 'Тайп-Статус', 'Редакт-Дата', 'Редакт-Статус', 'Публікація-Дата', 'Публікація-Статус']
+
 
 class SheetsHelper:
     """Клас для інкапсуляції всієї роботи з Google Sheets."""
@@ -72,15 +80,18 @@ class SheetsHelper:
         if not self.spreadsheet: return "Помилка підключення до таблиці."
         try:
             users_sheet = self.spreadsheet.worksheet("Users")
+            # Знаходимо користувача за ID (перша колонка, як було вказано)
             user_ids = users_sheet.col_values(1)
-            if str(user_id) in user_ids:
+            
+            # Якщо таблиця пуста, col_values(1) може повернути список із заголовком
+            if user_ids and str(user_id) in user_ids:
                 row_index = user_ids.index(str(user_id)) + 1
+                # Оновлюємо Теґ (колонка 2) та Нік (колонка 3)
                 users_sheet.update_cell(row_index, 2, username)
                 users_sheet.update_cell(row_index, 3, nickname)
                 return f"✅ Ваші дані оновлено. Нікнейм: {nickname}"
             else:
-                # Врахуйте, що ваша таблиця "Користувачі" має 4 колонки: Telegram-нік, Теґ, Нік, Ролі
-                # Тут ми записуємо тільки перші три. Ролі, ймовірно, додаються пізніше.
+                # Врахуйте, що ваша таблиця "Користувачі" має 4 колонки: Telegram-нік (ID), Теґ, Нік, Ролі
                 users_sheet.append_row([str(user_id), username, nickname, '']) # додаємо порожню колонку для Ролей
                 return f"✅ Вас успішно зареєстровано. Нікнейм: {nickname}"
         except Exception as e:
@@ -96,11 +107,13 @@ class SheetsHelper:
             if str(chapter_number) in chapters:
                 return f"⚠️ Розділ {chapter_number} для '{title_name}' вже існує."
             
-            # ОНОВЛЕНО: створюємо рядок, де статус = 'FALSE' (❌), а дата = ''
-            new_row_data = [str(chapter_number)]
+            # ОНОВЛЕНО: створюємо рядок, де статус = '❌', а дата/нік = ''
+            new_row_data = [str(chapter_number), ''] # Розділ, Нік
+            
             for _ in ROLE_TO_COLUMN_BASE:
-                 new_row_data.extend(['FALSE', '']) # 'Статус', 'Дата'
-            new_row_data.append('FALSE') # 'Публікація'
+                 new_row_data.extend(['', '❌']) # 'Дата', 'Статус'
+            
+            new_row_data.extend(['', '❌']) # Публікація: 'Дата', 'Статус'
 
             worksheet.append_row(new_row_data)
             return f"✅ Додано розділ {chapter_number} до тайтлу '{title_name}'."
@@ -113,7 +126,6 @@ class SheetsHelper:
         if not self.spreadsheet: return "Помилка підключення до таблиці."
         try:
             worksheet = self.spreadsheet.worksheet(title_name)
-            # Отримуємо всі значення, а не records, щоб коректно обробляти дати
             all_values = worksheet.get_all_values()
             if len(all_values) <= 1:
                  return f"📊 Для тайтлу '{title_name}' ще немає жодного розділу."
@@ -123,30 +135,51 @@ class SheetsHelper:
 
             response = [f"📊 *Статус тайтлу '{title_name}':*\n"]
             
+            # Індекси основних колонок
+            chapter_index = headers.index('Розділ')
+            nick_index = headers.index('Нік')
+
             for row in records:
-                chapter = row[0]
+                chapter = row[chapter_index]
+                main_nick = row[nick_index].strip()
+                main_nick_info = f" ({main_nick})" if main_nick else ""
                 statuses = []
                 
+                # Обробка основних ролей
                 for role_key, role_base_name in ROLE_TO_COLUMN_BASE.items():
-                    status_col_name = f'{role_base_name}-Статус'
                     date_col_name = f'{role_base_name}-Дата'
+                    status_col_name = f'{role_base_name}-Статус'
                     
                     try:
-                        status_index = headers.index(status_col_name)
                         date_index = headers.index(date_col_name)
+                        status_index = headers.index(status_col_name)
                         
-                        status_value = row[status_index].strip().upper()
+                        status_value = row[status_index].strip()
                         date_value = row[date_index].strip()
                         
-                        status_char = "✅" if status_value == 'TRUE' else "❌"
+                        status_char = "✅" if status_value == '✅' else "❌"
                         date_info = f" ({date_value})" if date_value else ""
                         
                         statuses.append(f"*{role_key}*: {status_char}{date_info}")
                     except ValueError:
-                        # Якщо колонка не знайдена, виводимо лише статус
                         statuses.append(f"*{role_key}*: ⚠️") 
 
-                response.append(f"*{chapter}* — _{' | '.join(statuses)}_")
+                # Обробка публікації
+                try:
+                    pub_date_index = headers.index(f'{PUBLISH_COLUMN_BASE}-Дата')
+                    pub_status_index = headers.index(f'{PUBLISH_COLUMN_BASE}-Статус')
+                    pub_status = row[pub_status_index].strip()
+                    pub_date = row[pub_date_index].strip()
+                    
+                    pub_status_char = "✅" if pub_status == '✅' else "❌"
+                    pub_date_info = f" ({pub_date})" if pub_date else ""
+                    
+                    statuses.append(f"*Публікація*: {pub_status_char}{pub_date_info}")
+                except ValueError:
+                    statuses.append(f"*Публікація*: ⚠️") 
+
+
+                response.append(f"*{chapter}*{main_nick_info} — _{' | '.join(statuses)}_")
             return "\n".join(response)
         except gspread.WorksheetNotFound:
             return f"⚠️ Тайтл '{title_name}' не знайдено."
@@ -154,71 +187,90 @@ class SheetsHelper:
             logger.error(f"Помилка отримання статусу: {e}")
             return "❌ Сталася помилка при отриманні статусу."
 
-    def update_chapter_status(self, title_name, chapter_number, role, status_char):
-        """Оновлює статус конкретної ролі для розділу та записує дату."""
+    def update_chapter_status(self, title_name, chapter_number, role, status_char, nickname):
+        """Оновлює статус конкретної ролі для розділу, записує дату та нік (якщо це основна роль)."""
         if not self.spreadsheet: return "Помилка підключення до таблиці."
         
         role_lower = role.lower()
-        if role_lower not in ROLE_TO_COLUMN_BASE and role_lower != 'публікація':
-            return f"⚠️ Невідома роль '{role}'. Доступні: {', '.join(ROLE_TO_COLUMN_BASE.keys())}, публікація"
         
         try:
             worksheet = self.spreadsheet.worksheet(title_name)
-            cell = worksheet.find(str(chapter_number))
+            
+            # ОНОВЛЕНО: Використовуємо .find(str(chapter_number)) для пошуку
+            cell = worksheet.find(str(chapter_number), in_column=1) 
             if not cell:
                 return f"⚠️ Розділ {chapter_number} не знайдено в тайтлі '{title_name}'."
             
             headers = worksheet.row_values(1)
             row_index = cell.row
             
-            new_status = 'TRUE' if status_char == '+' else 'FALSE'
+            new_status_char = '✅' if status_char == '+' else '❌'
             current_date = datetime.now().strftime("%d.%m")
+            
+            # Індекс колонки для загального Ніку (поруч з розділом)
+            nick_index = headers.index('Нік') + 1
 
             if role_lower == 'публікація':
-                status_col_name = PUBLISH_COLUMN
-                date_col_name = None # У вашій структурі дата публікації окремо не потрібна, лише статус
+                # Оновлення статусу публікації
+                status_col_name = f'{PUBLISH_COLUMN_BASE}-Статус'
+                date_col_name = f'{PUBLISH_COLUMN_BASE}-Дата'
                 
-                # Публікація - це завжди '✅' / '❌', а не TRUE/FALSE, якщо вона в кінці рядка
-                new_status_char = '✅' if status_char == '+' else '❌'
+                # Перевірка наявності колонок
+                if status_col_name not in headers or date_col_name not in headers:
+                    return f"❌ Помилка: Не знайдена колонка для статусу/дати '{PUBLISH_COLUMN_BASE}'."
                 
                 status_index = headers.index(status_col_name) + 1
+                date_index = headers.index(date_col_name) + 1
+                
                 worksheet.update_cell(row_index, status_index, new_status_char)
-
+                
+                # Оновлюємо дату та Нік
+                if status_char == '+':
+                    worksheet.update_cell(row_index, date_index, current_date)
+                    worksheet.update_cell(row_index, nick_index, nickname) # Також записуємо нік при публікації
+                else:
+                    worksheet.update_cell(row_index, date_index, '')
+                
                 return f"✅ Статус оновлено: '{title_name}', розділ {chapter_number}, роль Публікація → {status_char}"
 
-            else:
+            elif role_lower in ROLE_TO_COLUMN_BASE:
                 # Оновлення статусу для ролей (Клін, Переклад, Тайп, Редакт)
                 role_base_name = ROLE_TO_COLUMN_BASE[role_lower]
                 status_col_name = f'{role_base_name}-Статус'
                 date_col_name = f'{role_base_name}-Дата'
+
+                 # Перевірка наявності колонок
+                if status_col_name not in headers or date_col_name not in headers:
+                    return f"❌ Помилка: Не знайдена колонка для статусу/дати '{role_base_name}'."
                 
                 status_index = headers.index(status_col_name) + 1
                 date_index = headers.index(date_col_name) + 1
                 
                 # 1. Оновлюємо статус
-                worksheet.update_cell(row_index, status_index, new_status)
+                worksheet.update_cell(row_index, status_index, new_status_char)
                 
-                # 2. Оновлюємо дату (тільки якщо статус встановлюється на '+')
+                # 2. Оновлюємо дату та Нік
                 if status_char == '+':
                     worksheet.update_cell(row_index, date_index, current_date)
+                    worksheet.update_cell(row_index, nick_index, nickname)
                 else:
                     # Якщо статус скидається ('-'), очищуємо дату
                     worksheet.update_cell(row_index, date_index, '')
 
-                return f"✅ Статус оновлено: '{title_name}', розділ {chapter_number}, роль {role} → {status_char}"
+                return f"✅ Статус оновлено: '{title_name}', розділ {chapter_number}, роль {role} → {status_char} (Виконавець: {nickname})"
+            else:
+                return f"⚠️ Невідома роль '{role}'. Доступні: {', '.join(ROLE_TO_COLUMN_BASE.keys())}, публікація"
         
         except gspread.WorksheetNotFound:
             return f"⚠️ Тайтл '{title_name}' не знайдено."
-        except ValueError as ve: # .index() fails, коли колонка не знайдена
+        except ValueError as ve: 
             logger.error(f"Помилка індексування колонки: {ve}")
-            return f"❌ Помилка: Не знайдена колонка для статусу/дати '{role_base_name}'."
+            return f"❌ Помилка: Не знайдена колонка. Перевірте заголовки таблиці: {ve}"
         except Exception as e:
             logger.error(f"Помилка оновлення статусу: {e}")
             return "❌ Сталася помилка при оновленні статусу."
 
-# --- Обробники команд Telegram (без змін) ---
-# ... (start_command, help_command, register, parse_title_and_args, new_chapter, status, update_status залишаються незмінними, оскільки логіка взаємодії з таблицею змінилася всередині SheetsHelper)
-# ...
+# --- Обробники команд Telegram ---
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Привіт! Це бот для відстеження роботи над тайтлами. Використовуйте /help для списку команд.")
@@ -240,14 +292,16 @@ async def register(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     nickname = " ".join(context.args)
     sheets = SheetsHelper(GOOGLE_CREDENTIALS_FILE, SPREADSHEET_NAME)
-    response = sheets.register_user(user.id, user.username or "N/A", nickname)
+    # Telegram-тег беремо з username, якщо є, або з імені
+    telegram_tag = f"@{user.username}" if user.username else user.full_name
+    response = sheets.register_user(user.id, telegram_tag, nickname)
     await update.message.reply_text(response)
 
 def parse_title_and_args(text):
     """Парсер для команд, що містять назву тайтлу в лапках."""
     match = re.search(r'\"(.*?)\"', text)
     if not match:
-        return None, None
+        return None, text.strip().split() # Якщо лапок немає, назви тайтлу теж немає
     title = match.group(1)
     remaining_args = text[match.end():].strip().split()
     return title, remaining_args
@@ -276,18 +330,26 @@ async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def update_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
     full_text = " ".join(context.args)
     title, args = parse_title_and_args(full_text)
+    
+    # Очікуємо 3 аргументи: Номер розділу, Роль, +/-
     if not title or len(args) != 3 or not args[0].isdigit() or args[2] not in ['+', '-']:
         await update.message.reply_text('Невірний формат. Приклад: `/updatestatus "Відьмоварта" 15 клін +`')
         return
+    
     chapter, role, status_char = args
+    
+    # ОНОВЛЕНО: Отримуємо Нік користувача. Наразі це його повне ім'я, оскільки ми не використовуємо таблицю "Користувачі" для пошуку
+    # Нік, який користувач ввів при /register, але це краще ніж нічого.
+    nickname = update.effective_user.first_name # Беремо лише ім'я для стислості
+    if update.effective_user.username:
+        nickname = f"@{update.effective_user.username}"
+
     sheets = SheetsHelper(GOOGLE_CREDENTIALS_FILE, SPREADSHEET_NAME)
-    response = sheets.update_chapter_status(title, chapter, role, status_char)
+    response = sheets.update_chapter_status(title, chapter, role, status_char, nickname)
     await update.message.reply_text(response)
 
 
-# --- АСИНХРОННИЙ ЗАПУСК ДЛЯ WEBHOOKS (без змін) ---
-# ... (main та його логіка вебхука залишаються незмінними)
-# ...
+# --- АСИНХРОННИЙ ЗАПУСК ДЛЯ WEBHOOKS ---
 
 async def main():
     """Основна асинхронна функція для запуску бота."""
