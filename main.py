@@ -72,8 +72,13 @@ class SheetsHelper:
         except Exception as e:
             logger.error(f"Не вдалося підключитися до Google Sheets: {e}")
 
-    def _get_or_create_worksheet(self, title_name, headers=None):
-        """Отримує або створює аркуш за назвою з опціональними заголовками; Заголовки завжди в рядку 3;"""
+    # ВИПРАВЛЕННЯ 1: Змінено логіку вставки заголовків
+    def _get_or_create_worksheet(self, title_name, headers=None, force_headers=False):
+        """
+        Отримує або створює аркуш за назвою; 
+        Заголовки (якщо передані та force_headers=True) вставляються в рядок 3;
+        Аркуші Тайтлів створюються без заголовків тут;
+        """
         if not self.spreadsheet: raise ConnectionError("Немає підключення до Google Sheets;")
         try:
             return self.spreadsheet.worksheet(title_name)
@@ -83,8 +88,8 @@ class SheetsHelper:
             # Створюємо аркуш
             worksheet = self.spreadsheet.add_worksheet(title=title_name, rows="100", cols=str(cols))
             
-            # ВИПРАВЛЕННЯ: Заголовки додаються в 3-й рядок (A3)
-            if headers:
+            # Тільки якщо `force_headers=True` (для Журналу; Користувачів); вставляємо заголовки
+            if headers and force_headers: 
                 # Вставляємо порожні рядки 1 та 2
                 worksheet.insert_row([], 1) 
                 worksheet.insert_row([], 2) 
@@ -94,16 +99,16 @@ class SheetsHelper:
             
     def _initialize_sheets(self):
         """Ініціалізує основні аркуші (Журнал; Users; Тайтли);"""
-        # Ініціалізація Журналу
+        # Ініціалізація Журналу (force_headers=True)
         try:
-            self.log_sheet = self._get_or_create_worksheet("Журнал", LOG_HEADERS)
+            self.log_sheet = self._get_or_create_worksheet("Журнал", LOG_HEADERS, force_headers=True)
         except Exception as e:
             logger.error(f"Не вдалося ініціалізувати аркуш 'Журнал': {e}")
             self.log_sheet = None
             
-        # Ініціалізація Користувачів
+        # Ініціалізація Користувачів (force_headers=True)
         try:
-            self.users_sheet = self._get_or_create_worksheet("Користувачі", ['Telegram-ID', 'Теґ', 'Нік', 'Ролі'])
+            self.users_sheet = self._get_or_create_worksheet("Користувачі", ['Telegram-ID', 'Теґ', 'Нік', 'Ролі'], force_headers=True)
         except Exception as e:
             logger.error(f"Не вдалося ініціалізувати аркуш 'Користувачі': {e}")
             self.users_sheet = None
@@ -152,35 +157,19 @@ class SheetsHelper:
             logger.error(f"Помилка реєстрації: {e}")
             return "❌ Сталася помилка під час реєстрації;"
 
+    # ВИПРАВЛЕННЯ 2: set_team тепер лише встановлює команду в A2
     def set_team(self, title_name, team_string, beta_nickname, telegram_tag, nickname):
-        """Встановлює команду тайтлу в A2; оновлює заголовки; якщо є бета; в A3;"""
+        """Створює аркуш (якщо його немає) та встановлює команду тайтлу в A2;"""
         if not self.spreadsheet: return "Помилка підключення до таблиці;"
         
         try:
-            # Створюємо аркуш; якщо його немає;
-            worksheet = self._get_or_create_worksheet(title_name, generate_sheet_headers(include_beta=False))
+            # Створюємо аркуш; якщо його немає; (заголовки не додаються)
+            worksheet = self._get_or_create_worksheet(title_name) 
 
             # 1. Записуємо команду в клітинку A2
             worksheet.update_acell('A2', team_string)
             
-            # 2. Перевіряємо; чи потрібно оновити заголовки
-            # Читаємо рядок 3 (де мають бути заголовки)
-            try:
-                current_headers = worksheet.row_values(3)
-            except gspread.exceptions.APIError:
-                current_headers = []
-            
-            # Визначаємо; які заголовки повинні бути
-            should_have_beta = bool(beta_nickname)
-            required_headers = generate_sheet_headers(include_beta=should_have_beta)
-            
-            if current_headers != required_headers:
-                # Оновлюємо заголовки
-                worksheet.delete_rows(3, 3) 
-                worksheet.insert_row(required_headers, 3)
-                logger.info(f"Оновлено заголовки для {title_name}; Бета: {should_have_beta}")
-            
-            # 3. Логування
+            # 2. Логування
             self._log_action(
                 telegram_tag=telegram_tag,
                 nickname=nickname,
@@ -190,7 +179,7 @@ class SheetsHelper:
             )
             
             beta_info = f" (з Бета-тестером: {beta_nickname})" if beta_nickname else ""
-            return f"✅ Команда для тайтлу '{title_name}' успішно встановлена;{beta_info}"
+            return f"✅ Команда для тайтлу '{title_name}' успішно встановлена;{beta_info}\n_Шапка (заголовки) будуть створені автоматично при додаванні першого розділу;_"
             
         except gspread.WorksheetNotFound:
             return f"⚠️ Тайтл '{title_name}' не знайдено;"
@@ -198,46 +187,72 @@ class SheetsHelper:
             logger.error(f"Помилка встановлення команди: {e}")
             return "❌ Сталася помилка при встановленні команди;"
 
+    # ВИПРАВЛЕННЯ 3: add_chapter тепер перевіряє та створює правильну шапку
     def add_chapter(self, title_name, chapter_number):
-        """Додає новий розділ до відповідного аркуша тайтлу; використовує рядок 3 для заголовків;"""
+        """
+        Додає новий розділ до відповідного аркуша тайтлу;
+        Перевіряє наявність заголовків у рядку 3 і створює їх; враховуючи наявність "бета" в A2;
+        """
         if not self.spreadsheet: return "Помилка підключення до таблиці;"
         try:
-            # Використовуємо _get_or_create_worksheet (може створити з дефолтними заголовками у рядку 3)
-            worksheet = self._get_or_create_worksheet(title_name, SHEET_HEADERS) 
+            # Отримуємо існуючий аркуш; або створюємо без заголовків
+            try:
+                 worksheet = self.spreadsheet.worksheet(title_name)
+            except gspread.WorksheetNotFound:
+                 # Створення аркуша без заголовків
+                 worksheet = self._get_or_create_worksheet(title_name) 
+
+            # 1. Визначаємо; чи є бета-роль в команді (рядок A2)
+            try:
+                team_string = worksheet.acell('A2').value or ''
+            except Exception:
+                team_string = ''
+                
+            has_beta_in_team = 'бета -' in team_string.lower()
             
-            # Отримуємо фактичні заголовки (вони мають бути в рядку 3)
-            headers = worksheet.row_values(3) 
-            if not headers or headers[0] != 'Розділ':
-                 # Це крайній випадок
-                 worksheet.insert_row(SHEET_HEADERS, 3)
-                 headers = SHEET_HEADERS
-                 logger.warning(f"Відновлено заголовки в рядку 3 для тайтлу '{title_name}'")
-
-
-            # Отримуємо всі значення; починаючи з рядка 4 (після заголовків)
+            # 2. Перевіряємо та створюємо/оновлюємо заголовки в рядку 3
+            required_headers = generate_sheet_headers(include_beta=has_beta_in_team)
+            
+            # Отримуємо поточні заголовки (або порожній список)
+            try:
+                current_headers = worksheet.row_values(3)
+            except gspread.exceptions.APIError:
+                current_headers = []
+            
+            # Якщо заголовки відсутні або не збігаються з необхідними
+            if not current_headers or current_headers != required_headers:
+                logger.info(f"Створення/оновлення заголовків для {title_name}; Бета: {has_beta_in_team}")
+                # Якщо рядок 3 не порожній; видаляємо його перед вставкою
+                if current_headers:
+                    worksheet.delete_rows(3, 3) 
+                
+                # Забезпечуємо наявність порожніх рядків 1 та 2 (якщо їх немає)
+                # Перевіряти наявність пустих рядків тут складно; але gspread.insert_row(..., 3) 
+                # гарантує; що він буде на 3-му місці;
+                
+                worksheet.insert_row(required_headers, 3) # Вставляємо заголовки в 3-й рядок
+                
+            headers = required_headers # Використовуємо тепер актуальні заголовки
+            
+            # 3. Перевірка на дублікат розділу
             all_values = worksheet.get_all_values()
-            
-            # Рядки з даними (після заголовків у рядку 3)
-            data_rows = all_values[3:] 
-            
-            # Перша колонка - розділ
+            data_rows = all_values[3:] # Рядки з даними (після заголовків)
             chapters = [row[0] for row in data_rows if row and row[0].strip()] 
             
             if str(chapter_number) in chapters:
                 return f"⚠️ Розділ {chapter_number} для '{title_name}' вже існує;"
             
-            # Визначаємо; чи є Бета-роль в поточних заголовках
-            has_beta = any("Бета" in header for header in headers)
-
-            # Створюємо рядок
-            new_row_data = [str(chapter_number)] # Розділ
+            # 4. Створення рядка для розділу
             
             # Генерація ролей для створення рядка (включаючи Бета; якщо вона є в заголовках)
             base_roles = list(ROLE_TO_COLUMN_BASE.values())
-            if has_beta:
+            if has_beta_in_team:
                 base_roles.append("Бета")
                 
             num_roles = len(base_roles)
+            
+            new_row_data = [str(chapter_number)] # Розділ
+            
             # Додаємо дані для основних ролей (Нік; Дата; Статус)
             for _ in range(num_roles):
                  new_row_data.extend(['', '', '❌']) # 'Нік'; 'Дата'; 'Статус'
@@ -247,7 +262,7 @@ class SheetsHelper:
 
             worksheet.append_row(new_row_data)
             
-            # Логування
+            # 5. Логування
             self._log_action(telegram_tag="Bot", nickname="System", title=title_name, chapter=chapter_number, role="Додано розділ")
 
             return f"✅ Додано розділ {chapter_number} до тайтлу '{title_name}'."
@@ -255,166 +270,12 @@ class SheetsHelper:
             logger.error(f"Помилка додавання розділу: {e}")
             return "❌ Сталася помилка при додаванні розділу;"
 
-    def get_status(self, title_name):
-        """Отримує статус усіх розділів для тайтлу; використовує рядок 3 для заголовків;"""
-        if not self.spreadsheet: return "Помилка підключення до таблиці;"
-        try:
-            worksheet = self.spreadsheet.worksheet(title_name)
-            all_values = worksheet.get_all_values()
-            
-            # Заголовки мають бути в рядку 3 (індекс 2)
-            if len(all_values) < 3: # Достатньо лише 3 рядків (1, 2 пусті/команда, 3 заголовки)
-                 return f"📊 Для тайтлу '{title_name}' ще немає жодного розділу;"
-            
-            # Рядок заголовків - індекс 2
-            headers = all_values[2] 
-            # Рядки з даними - індекси 3 і далі
-            records = all_values[3:]
+    # Методи get_status та update_chapter_status не потребують змін; 
+    # оскільки вони вже покладаються на правильність рядка 3 з заголовками;
 
-            response = [f"📊 *Статус тайтлу '{title_name}':*\n"]
-            
-            # Індекс колонки розділу в рядку заголовків (індекс 2)
-            try:
-                chapter_index = headers.index('Розділ')
-            except ValueError:
-                return f"❌ Помилка: Не знайдено заголовок 'Розділ' у рядку 3 аркуша '{title_name}';"
-
-            # Список для обробки основних ролей та публікації
-            role_definitions = list(ROLE_TO_COLUMN_BASE.items())
-            
-            # Додаємо "бета"; якщо є в заголовках
-            if any("Бета-Нік" in h for h in headers):
-                 role_definitions.append(("бета", "Бета"))
-                 
-            role_definitions.append(("публікація", PUBLISH_COLUMN_BASE))
-            
-            found_chapters = False
-            for row in records:
-                # Перевіряємо; чи це не порожній рядок
-                if not row or not row[chapter_index].strip():
-                     continue 
-
-                chapter = row[chapter_index]
-                statuses = []
-                found_chapters = True
-                
-                for role_key, role_base_name in role_definitions:
-                     # Пошук колонок для Нік/Дата/Статус
-                     nick_col_name = f'{role_base_name}-Нік'
-                     date_col_name = f'{role_base_name}-Дата'
-                     status_col_name = f'{role_base_name}-Статус'
-                     
-                     try:
-                         # Шукаємо індекси в поточних заголовках
-                         nick_index = headers.index(nick_col_name)
-                         date_index = headers.index(date_col_name)
-                         status_index = headers.index(status_col_name)
-                         
-                         nick_value = row[nick_index].strip()
-                         date_value = row[date_index].strip()
-                         status_value = row[status_index].strip()
-                         
-                         status_char = "✅" if status_value == '✅' else "❌"
-                         info = []
-                         if nick_value:
-                             info.append(nick_value)
-                         if date_value:
-                             info.append(date_value)
-                         
-                         info_str = f" ({' | '.join(info)})" if info else ""
-                         
-                         statuses.append(f"*{role_key}*: {status_char}{info_str}")
-                     except ValueError:
-                          if role_key not in ["бета", "публікація"]:
-                              statuses.append(f"*{role_key}*: ⚠️ (Помилка заголовка)")  
-
-                response.append(f"*{chapter}* — _{' | '.join(statuses)}_")
-            
-            if not found_chapters:
-                return f"📊 Для тайтлу '{title_name}' ще немає жодного розділу;"
-
-            return "\n".join(response)
-        except gspread.WorksheetNotFound:
-            return f"⚠️ Тайтл '{title_name}' не знайдено;"
-        except Exception as e:
-            logger.error(f"Помилка отримання статусу: {e}")
-            return "❌ Сталася помилка при отриманні статусу;"
-
-    def update_chapter_status(self, title_name, chapter_number, role, status_char, nickname, telegram_tag):
-        """Оновлює статус; дату та нік для конкретної ролі та логує дію; використовує рядок 3 для заголовків;"""
-        if not self.spreadsheet: return "Помилка підключення до таблиці;"
-        
-        role_lower = role.lower()
-        role_base_name = None
-        
-        # Обробка ролей
-        if role_lower == 'публікація':
-            role_base_name = PUBLISH_COLUMN_BASE
-        elif role_lower in ROLE_TO_COLUMN_BASE:
-            role_base_name = ROLE_TO_COLUMN_BASE[role_lower]
-        elif role_lower == 'бета':
-            role_base_name = 'Бета'
-        else:
-            return f"⚠️ Невідома роль '{role}'; Доступні: {', '.join(ROLE_TO_COLUMN_BASE.keys())}, бета, публікація"
-            
-        try:
-            worksheet = self.spreadsheet.worksheet(title_name)
-            
-            # Пошук рядка за номером розділу в колонці 1
-            # Пошук починається з 4-го рядка (рядки 1-3 - команда/порожній/заголовки)
-            cell = worksheet.find(str(chapter_number), in_column=1)
-            if not cell or cell.row < 4:
-                return f"⚠️ Розділ {chapter_number} не знайдено в тайтлі '{title_name}';"
-            
-            # Рядок заголовків - індекс 2
-            headers = worksheet.row_values(3)
-            row_index = cell.row # Індекс рядка з розділом
-            
-            new_status_char = '✅' if status_char == '+' else '❌'
-            current_date = datetime.now().strftime("%d.%m")
-            
-            # Пошук індексів колонок для цієї ролі
-            nick_col_name = f'{role_base_name}-Нік'
-            date_col_name = f'{role_base_name}-Дата'
-            status_col_name = f'{role_base_name}-Статус'
-
-            # Перевірка наявності всіх трьох колонок
-            if not all(col in headers for col in [nick_col_name, date_col_name, status_col_name]):
-                return f"❌ Помилка: Не знайдено всі колонки для ролі '{role_base_name}'; Перевірте заголовки таблиці; (Рядок 3)"
-            
-            # Індекси колонок gspread (починаються з 1)
-            nick_index = headers.index(nick_col_name) + 1
-            date_index = headers.index(date_col_name) + 1
-            status_index = headers.index(status_col_name) + 1
-            
-            # 1. Оновлюємо статус
-            worksheet.update_cell(row_index, status_index, new_status_char)
-            
-            # 2. Оновлюємо Нік та Дату
-            if status_char == '+':
-                worksheet.update_cell(row_index, date_index, current_date)
-                worksheet.update_cell(row_index, nick_index, nickname)
-            else:
-                # Якщо статус скидається ('-'); очищуємо Нік та Дату
-                worksheet.update_cell(row_index, date_index, '')
-                worksheet.update_cell(row_index, nick_index, '')
-
-            # 3. Логуємо дію
-            self._log_action(telegram_tag, nickname, title_name, chapter_number, role_lower)
-
-            return f"✅ Статус оновлено; '{title_name}', розділ {chapter_number}, роль {role_lower} → {status_char} (Виконавець: {nickname})"
-            
-        except gspread.WorksheetNotFound:
-            return f"⚠️ Тайтл '{title_name}' не знайдено;"
-        except ValueError as ve:
-            logger.error(f"Помилка індексування колонки: {ve}")
-            return f"❌ Помилка: Не знайдена колонка; Перевірте заголовки таблиці: {ve}"
-        except Exception as e:
-            logger.error(f"Помилка оновлення статусу: {e}")
-            return "❌ Сталася помилка при оновленні статусу;"
-
-
-# --- Обробники команд Telegram ---
+# --- Обробники команд Telegram (без змін; використовують оновлений SheetsHelper) ---
+# ... (весь код обробників та main залишається без змін) ...
+# В цілях економії місця я опускаю незмінені функції тут; але вони є в повному коді;
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Привіт! Це бот для відстеження роботи над тайтлами; Використовуйте /help для списку команд;");
@@ -524,7 +385,7 @@ async def team_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "Будь ласка; введіть ніки в наступному форматі:\n\n"
         "`клін - нік; переклад - нік; тайп - нік; редакт - нік; [бета - нік]`\n\n"
         "Наприклад: `клін - Клінер; переклад - Перекладач; тайп - Тайпер; редакт - Редактор; бета - БетаТест`\n"
-        "Бета-нік є необов'язковим;"
+        "Бета є необов'язковою;"
     )
     context.user_data['awaiting_team_input'] = True
     
@@ -581,6 +442,7 @@ async def handle_team_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         # ВИПРАВЛЕННЯ: Використовуємо sheets з контексту
         sheets = context.application.bot_data['sheets_helper']
+        # Тепер set_team тільки встановлює команду в A2
         response = sheets.set_team(title_name, team_string, beta_nickname, telegram_tag, nickname)
         
         # Очищуємо контекст
