@@ -216,27 +216,6 @@ class SheetsHelper:
             i + 1 for i, header in enumerate(required_headers) 
             if header.endswith('-Статус')
         ]
-        
-        if status_cols:
-            for col_index in status_cols:
-                # Конвертуємо індекс колонки в букву
-                col_letter = gspread.utils.rowcol_to_a1(1, col_index).rstrip('1')
-                range_label = f'{col_letter}4:{col_letter}1000' # З 4-го рядка
-                worksheet.set_data_validation(
-                    range_label,
-                    {
-                        'condition': {
-                            'type': 'ONE_OF_LIST',
-                            'values': [
-                                {'userEnteredValue': '✅'},
-                                {'userEnteredValue': '❌'}
-                            ]
-                        },
-                        'strict': True
-                    }
-                )
-
-        return headers_updated;
 
     # ЗМІНА 3: add_chapters для обробки одного або кількох розділів
     def add_chapters(self, title_name, chapter_numbers, telegram_tag, nickname):
