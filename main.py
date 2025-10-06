@@ -13,7 +13,7 @@ from datetime import datetime
 # Вставте токен вашого Telegram-бота
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "7392593867:AAHSNWTbZxS4BfEKJa3KG7SuhK2G9R5kKQA") # Зчитування з ENVs
 # URL для встановлення вебхука.
-WEBHOOK_URL = os.environ.get("WEBHOOK_URL", "https://pustobot.onrender.com/") # Зчитування з ENVs
+WEBHOOK_URL = os.environ.get("WEBHOOK_URL", "https://pustobot.onrender.com") # Зчитування з ENVs
 
 # Назва файлу з ключами доступу до Google API
 GOOGLE_CREDENTIALS_FILE = 'credentials.json'
@@ -179,7 +179,7 @@ class SheetsHelper:
             )
             
             beta_info = f" (з Бета-тестером: {beta_nickname})" if beta_nickname else ""
-            return f"✅ Команда для тайтлу '{title_name}' успішно встановлена;{beta_info}\n_Шапка (заголовки) будуть створені автоматично при додаванні першого розділу;_"
+            return f"✅ Команда для тайтлу '{title_name}' успішно встановлена;{beta_info}\n"
             
         except gspread.WorksheetNotFound:
             return f"⚠️ Тайтл '{title_name}' не знайдено;"
