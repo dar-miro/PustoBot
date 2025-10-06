@@ -8,20 +8,10 @@ from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes, MessageHandler, filters
 from datetime import datetime
 
-# --- НАЛАШТУВАННЯ: ВКАЖІТЬ ВАШІ ДАНІ ТУТ ---
-
-# Вставте токен вашого Telegram-бота
-TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "7392593867:AAHSNWTbZxS4BfEKJa3KG7SuhK2G9R5kKQA") # Зчитування з ENVs
-# URL для встановлення вебхука.
-WEBHOOK_URL = os.environ.get("WEBHOOK_URL", "https://pustobot.onrender.com/") # Зчитування з ENVs
-
-# Назва файлу з ключами доступу до Google API
-GOOGLE_CREDENTIALS_FILE = 'credentials.json'
-
-# Назва вашої ГОЛОВНОЇ Google-таблиці
-SPREADSHEET_NAME = "PustoBot"
-
-# --- КІНЕЦЬ НАЛАШТУВАНЬ ---
+TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
+WEBHOOK_URL = os.environ.get("WEBHOOK_URL")
+GOOGLE_CREDENTIALS_FILE = os.environ.get("GOOGLE_CREDENTIALS_FILE", 'credentials.json')
+SPREADSHEET_KEY = os.environ.get("SPREADSHEET_KEY")
 
 # Налаштування логування
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
@@ -61,13 +51,13 @@ LOG_HEADERS = ['Дата', 'Telegram-Нік', 'Нік', 'Тайтл', '№ Ро�
 
 class SheetsHelper:
     """Клас для інкапсуляції всієї роботи з Google Sheets;"""
-    def __init__(self, credentials_file, spreadsheet_name):
+    def __init__(self, credentials_file, spreadsheet_key):
         self.spreadsheet = None
         self.log_sheet = None
         self.users_sheet = None
         try:
             gc = gspread.service_account(filename=credentials_file)
-            self.spreadsheet = gc.open(spreadsheet_name)
+            self.spreadsheet = gc.open_by_key(spreadsheet_key) # <<< Використовує ключ
             self._initialize_sheets()
         except Exception as e:
             logger.error(f"Не вдалося підключитися до Google Sheets: {e}")
@@ -711,9 +701,14 @@ async def handle_team_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def run_bot():
     """Основна функція для запуску бота;"""
+    # Додати до функції async def run_bot():
+
+    if not TELEGRAM_BOT_TOKEN:
+        logger.error("Критична помилка: Змінна середовища TELEGRAM_BOT_TOKEN не встановлена; Бот не буде запущений;")
+        return # Зупиняємо виконання;
     
     # Ініціалізація SheetsHelper
-    sheets_helper = SheetsHelper(GOOGLE_CREDENTIALS_FILE, SPREADSHEET_NAME)
+    sheets_helper = SheetsHelper(GOOGLE_CREDENTIALS_FILE, SPREADSHEET_KEY)
     if not sheets_helper.spreadsheet:
         logger.error("Не вдалося ініціалізувати Google Sheets; Бот не буде запущений;")
         return
