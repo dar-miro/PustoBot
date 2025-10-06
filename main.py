@@ -703,9 +703,15 @@ async def run_bot():
     """Основна функція для запуску бота;"""
     # Додати до функції async def run_bot():
 
+    # ПЕРЕВІРКА 1: TELEGRAM_BOT_TOKEN
     if not TELEGRAM_BOT_TOKEN:
         logger.error("Критична помилка: Змінна середовища TELEGRAM_BOT_TOKEN не встановлена; Бот не буде запущений;")
-        return # Зупиняємо виконання;
+        return
+    
+    # ПЕРЕВІРКА 2: SPREADSHEET_KEY
+    if not SPREADSHEET_KEY:
+        logger.error("Критична помилка: Змінна середовища SPREADSHEET_KEY не встановлена; Вкажіть ID вашої Google Таблиці; Бот не буде запущений;")
+        return
     
     # Ініціалізація SheetsHelper
     sheets_helper = SheetsHelper(GOOGLE_CREDENTIALS_FILE, SPREADSHEET_KEY)
