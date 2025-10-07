@@ -1,3 +1,5 @@
+# main.py
+
 import logging
 import re
 import gspread
@@ -293,8 +295,12 @@ class SheetsHelper:
             logger.error(f"Помилка додавання розділу(ів): {e}")
             return "❌ Сталася помилка при додаванні розділу(ів);"
     
-    def get_status(self, title_name):
-        """Отримує і форматує статус роботи над тайтлом;"""
+    # ЗМІНА 5: Оновлення get_status для фільтрації розділів
+    def get_status(self, title_name, chapter_numbers=None):
+        """
+        Отримує і форматує статус роботи над тайтлом.
+        chapter_numbers: список номерів розділів, які потрібно показати (або None для всіх).
+        """
         if not self.spreadsheet: return "Помилка підключення до таблиці;"
         try:
             worksheet = self.spreadsheet.worksheet(title_name)
@@ -307,6 +313,15 @@ class SheetsHelper:
             headers = all_values[2] # Рядок 3
             data_rows = all_values[3:] # Рядки з даними (після заголовків)
             team_string = worksheet.acell('A2').value or 'Команда не встановлена' # Рядок 2
+
+            # Фільтрація рядків за номерами розділів
+            if chapter_numbers:
+                # Множина номерів розділів, які потрібно відобразити (у вигляді рядків)
+                target_chapters = {str(c) for c in chapter_numbers}
+                data_rows = [row for row in data_rows if row and row[0].strip() in target_chapters]
+                
+                if not data_rows:
+                    return f"⚠️ Жодного з вказаних розділів ({', '.join(map(str, chapter_numbers))}) для '{title_name}' не знайдено;"
 
             # Визначаємо індекси колонок для Нік; Статус
             col_indices = {}
@@ -327,6 +342,7 @@ class SheetsHelper:
             status_message = [f"📊 *Статус Тайтлу: {title_name}*\n"]
             status_message.append(f"👥 *Команда:*\n_{team_string}_\n")
             
+            # Максимальна довжина номера розділу для вирівнювання
             max_len_chapter = max(len(row[0]) for row in data_rows if row and row[0]) if data_rows else 0
             
             # Заголовок таблиці
@@ -368,8 +384,8 @@ class SheetsHelper:
                     
                 status_message.append(row_line)
 
-            # Ліміт на вивід: 50 останніх розділів + заголовок
-            if len(status_message) > 53:
+            # Ліміт на вивід: 50 останніх розділів + заголовок (тільки якщо не було вказано конкретний діапазон)
+            if not chapter_numbers and len(status_message) > 53:
                 status_message = status_message[:3] + ["..."] + status_message[-50:]
             
             return "\n".join(status_message)
@@ -485,7 +501,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "👤 `/register <нікнейм>`\n_Реєструє вас у системі;_\n\n"
         "👥 `/team \"Назва Тайтлу\"`\n_Встановлює команду для тайтлу; Бот запитає про ролі;_\n\n"
         "➕ `/newchapter \"Назва Тайтлу\" <номер_розділу|діапазон>`\n_Додає новий розділ(и) до тайтлу; Назву брати в лапки! Діапазон: 1-20_\n\n"
-        "📊 `/status \"Назва Тайтлу\"`\n_Показує статус усіх розділів тайтлу;_\n\n"
+        "📊 `/status \"Назва Тайтлу\" [номер_розділу|діапазон]`\n_Показує статус усіх розділів або вказаного діапазону;_\n\n"
         "🔄 `/updatestatus \"Назва Тайтлу\" <розділ> <роль> <+|-> [нік]`\n_Оновлює статус завдання; Нік необов'язковий; Ролі: клін; переклад; тайп; редакт; бета; публікація;_"
     )
     await update.message.reply_text(help_text, parse_mode="Markdown")
@@ -513,14 +529,11 @@ def parse_title_and_args(text):
     return title, remaining_args 
 
 # ЗМІНА 4: Оновлення new_chapter для підтримки діапазону (1-20)
-def parse_title_and_chapters(full_text):
-    """Парсер для /newchapter: тайтл та один або діапазон розділів;"""
-    title, args = parse_title_and_args(full_text)
-    if not title or len(args) != 1:
-        return None, None;
-
-    chapter_arg = args[0]
-    
+def parse_chapters_arg(chapter_arg):
+    """Парсер для аргументу розділу/діапазону (використовується в new_chapter та status);"""
+    if not chapter_arg:
+        return None
+        
     # Перевірка на діапазон (наприклад; 1-20)
     range_match = re.fullmatch(r'(\d+)-(\d+)', chapter_arg)
     
@@ -529,21 +542,49 @@ def parse_title_and_chapters(full_text):
         end = int(range_match.group(2))
         
         if start <= 0 or end <= 0 or start > end:
-            return title, None # Невірний діапазон
-        return title, list(range(start, end + 1))
+            return None # Невірний діапазон
+        return list(range(start, end + 1))
     
     # Перевірка на єдиний розділ
     if chapter_arg.isdigit():
         chapter = int(chapter_arg)
         if chapter <= 0:
-            return title, None # Невірний номер
-        return title, [chapter]
+            return None # Невірний номер
+        return [chapter]
     
-    return title, None # Невірний формат
+    return None # Невірний формат
+
+def parse_title_and_chapters_for_new(full_text):
+    """Парсер для /newchapter: тайтл та ОДИН розділ або діапазон (обов'язково);"""
+    title, args = parse_title_and_args(full_text)
+    if not title or len(args) != 1:
+        return None, None
+    
+    chapters = parse_chapters_arg(args[0])
+    return title, chapters
+
+# ЗМІНА 6: Новий парсер для /status
+def parse_title_and_chapters_for_status(full_text):
+    """Парсер для /status: тайтл та ОПЦІЙНИЙ розділ або діапазон;"""
+    title, args = parse_title_and_args(full_text)
+    if not title:
+        return None, None
+    
+    # Якщо немає аргументів, повертаємо None для розділів (означає "всі")
+    if not args:
+        return title, None
+        
+    # Якщо є аргумент, парсимо його як розділ/діапазон
+    if len(args) == 1:
+        chapters = parse_chapters_arg(args[0])
+        return title, chapters
+        
+    # Більше одного аргументу, але не розділ — помилка
+    return title, None
 
 async def new_chapter(update: Update, context: ContextTypes.DEFAULT_TYPE):
     full_text = " ".join(context.args)
-    title, chapters = parse_title_and_chapters(full_text)
+    title, chapters = parse_title_and_chapters_for_new(full_text)
     
     if not title or not chapters:
         await update.message.reply_text('Невірний формат; Приклад: `/newchapter "Відьмоварта" 15` або `/newchapter "Відьмоварта" 1-20`')
@@ -561,13 +602,17 @@ async def new_chapter(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
     full_text = " ".join(context.args)
-    title, _ = parse_title_and_args(full_text)
+    # ЗМІНА 7: Використовуємо новий парсер
+    title, chapters = parse_title_and_chapters_for_status(full_text)
+    
     if not title:
-        await update.message.reply_text('Невірний формат; Приклад: `/status "Відьмоварта"`')
+        await update.message.reply_text('Невірний формат; Приклад: `/status "Відьмоварта"` або `/status "Відьмоварта" 1-5`')
         return
+    
     # ВИПРАВЛЕННЯ: Використовуємо sheets з контексту
     sheets = context.application.bot_data['sheets_helper']
-    response = sheets.get_status(title)
+    # ЗМІНА 8: Передаємо список розділів до get_status
+    response = sheets.get_status(title, chapter_numbers=chapters)
     await update.message.reply_text(response, parse_mode="Markdown")
 
 async def update_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
