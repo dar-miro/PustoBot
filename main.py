@@ -3,6 +3,7 @@ import re
 import gspread
 import asyncio
 import os
+import sys # Додано для коректного виходу в run_bot
 from aiohttp import web
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes, MessageHandler, filters
@@ -27,7 +28,7 @@ ROLE_TO_COLUMN_BASE = {
 # Публікація
 PUBLISH_COLUMN_BASE = "Публікація"
 
-# ЗМІНА 1: Видалення стовпця 'Публікація-Нік' та 'Публікація-Дата'; Залишаємо тільки 'Публікація-Статус'
+# ЗМІНА 1: Видалення стовпця 'Публікація-Нік' та додавання 'Публікація-Дата';
 def generate_sheet_headers(include_beta=False):
     """Генерує список заголовків для аркуша тайтлу; опціонально включаючи Бета;"""
     headers = ['Розділ']
@@ -36,11 +37,11 @@ def generate_sheet_headers(include_beta=False):
         roles.append("Бета") # Додаємо Бета-роль до списку
 
     for role in roles:
-        # Порядок: Нік; Дата; Статус
+        # Порядок: Нік; Дата; Статус (для основних ролей)
         headers.extend([f'{role}-Нік', f'{role}-Дата', f'{role}-Статус'])
 
-    # ОНОВЛЕНО: Додаємо ТІЛЬКИ Публікація-Статус
-    headers.append(f'{PUBLISH_COLUMN_BASE}-Статус')
+    # ОНОВЛЕНО: Додаємо Публікація-Дата та Публікація-Статус (Нік не потрібен)
+    headers.extend([f'{PUBLISH_COLUMN_BASE}-Дата', f'{PUBLISH_COLUMN_BASE}-Статус'])
     return headers
 
 # Використовуємо стандартні заголовки без бети як глобальний дефолт
@@ -265,8 +266,8 @@ class SheetsHelper:
                 for _ in range(num_roles):
                     new_row_data.extend(['', '', '❌']) 
                 
-                # Додаємо дані для Публікації (Статус='❌')
-                new_row_data.append('❌') 
+                # ОНОВЛЕНО: Додаємо дані для Публікації (Дата=''; Статус='❌')
+                new_row_data.extend(['', '❌']) 
                 
                 new_rows.append(new_row_data)
 
@@ -291,9 +292,6 @@ class SheetsHelper:
         except Exception as e:
             logger.error(f"Помилка додавання розділу(ів): {e}")
             return "❌ Сталася помилка при додаванні розділу(ів);"
-    
-# ... (Інші методи SheetsHelper залишаються без змін) ...
-# В цілях економії місця я опускаю незмінені функції тут; але вони є в повному коді;
     
     def get_status(self, title_name):
         """Отримує і форматує статус роботи над тайтлом;"""
@@ -361,6 +359,7 @@ class SheetsHelper:
                     nick_index = col_indices.get(nick_col_key)
                     
                     # Логіка для ⏳ (У роботі): Якщо статус ❌; але нік є -> ⏳
+                    # Для 'Публікація' nick_index буде None; тому nick буде '' і ⏳ не покажеться;
                     nick = row[nick_index].strip() if nick_index is not None and nick_index < len(row) else ''
                     if status_char == '❌' and nick:
                         display_char = '⏳'
@@ -410,11 +409,13 @@ class SheetsHelper:
             # Знаходимо індекси колонок для Нік; Дата; Статус
             
             if role_key == PUBLISH_COLUMN_BASE:
-                status_col_index = -1 # Останній елемент у заголовку
-                if not headers[-1] == f'{PUBLISH_COLUMN_BASE}-Статус':
-                    return "❌ Помилка: Невірний формат заголовків аркуша тайтлу (Публікація);"
-                nick_col_index = None
-                date_col_index = None
+                try:
+                    # ОНОВЛЕНО: Публікація має 2 колонки: Дата та Статус (Нік відсутній)
+                    date_col_index = headers.index(f'{PUBLISH_COLUMN_BASE}-Дата') + 1
+                    status_col_index = headers.index(f'{PUBLISH_COLUMN_BASE}-Статус') + 1
+                    nick_col_index = None # Нік для публікації не використовується
+                except ValueError:
+                    return "❌ Помилка: Невірний формат заголовків аркуша тайтлу (Публікація-Дата або Публікація-Статус відсутні);"
             else:
                 try:
                     nick_col_index = headers.index(f'{role_key}-Нік') + 1
@@ -428,9 +429,17 @@ class SheetsHelper:
             new_status = '✅' if status_char == '+' else '❌'
             
             # Оновлюємо значення
-            if status_col_index == -1: # Публікація-Статус
-                cell_range = gspread.utils.rowcol_to_a1(row_index, len(headers))
-                worksheet.update_acell(cell_range, new_status)
+            if role_key == PUBLISH_COLUMN_BASE: 
+                # Оновлюємо статус
+                worksheet.update_cell(row_index, status_col_index, new_status)
+                
+                # 2. Оновлення Дати (тільки для + або -)
+                if status_char == '+':
+                    current_date = datetime.now().strftime("%d.%m.%Y")
+                    worksheet.update_cell(row_index, date_col_index, current_date)
+                elif status_char == '-':
+                    # Прибираємо дату при відміні
+                    worksheet.update_cell(row_index, date_col_index, '')
             
             else: # Інші ролі
                 # Оновлюємо статус
