@@ -126,6 +126,27 @@ class SheetsHelper:
         else:
             logger.warning("Аркуш 'Журнал' не ініціалізовано; логування пропущено;")
 
+    # --- НОВИЙ МЕТОД ДЛЯ ОТРИМАННЯ НІКНЕЙМА ---
+    def get_nickname_by_id(self, user_id):
+        """Отримує зареєстрований Нік користувача за його Telegram-ID;"""
+        if not self.users_sheet: 
+            logger.warning("Аркуш 'Користувачі' не ініціалізовано; неможливо отримати нік;")
+            return None
+        try:
+            # Знаходимо користувача за ID (колонка 1)
+            user_ids = self.users_sheet.col_values(1)
+            str_user_id = str(user_id)
+            
+            if str_user_id in user_ids:
+                row_index = user_ids.index(str_user_id) + 1
+                # Нік знаходиться в колонці 3
+                nickname = self.users_sheet.cell(row_index, 3).value
+                return nickname if nickname and nickname.strip() else None
+            return None
+        except Exception as e:
+            logger.error(f"Помилка отримання нікнейма для ID {user_id}: {e}")
+            return None
+    # ---------------------------------------------
 
     def register_user(self, user_id, username, nickname):
         """Реєструє або оновлює користувача на аркуші 'Користувачі';"""
@@ -626,21 +647,30 @@ async def update_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     chapter, role, status_char = args[0], args[1], args[2]
     
-    # Визначаємо нік: якщо передано 4 аргументи; беремо останній; Інакше - Telegram-нік;
+    # ВИПРАВЛЕННЯ: Використовуємо sheets з контексту
+    sheets = context.application.bot_data['sheets_helper']
     user = update.effective_user
+    
+    # --- ОНОВЛЕННЯ ЛОГІКИ ВИЗНАЧЕННЯ НІКНЕЙМА ---
     if len(args) == 4:
-        nickname = args[3] # Нік вказано в команді
+        # 1. Нік вказано в команді (4-й аргумент)
+        nickname = args[3]
     else:
-        # Нік береться з Telegram-профілю користувача
-        nickname = user.first_name
-        if user.username:
-            nickname = f"@{user.username}"
+        # 2. Нік не вказано; шукаємо зареєстрований
+        registered_nickname = sheets.get_nickname_by_id(user.id)
+        
+        if registered_nickname:
+            # Використовуємо зареєстрований нік
+            nickname = registered_nickname
+        else:
+            # 3. Якщо нік не зареєстрований; беремо з Telegram-профілю (як fallback)
+            nickname = user.first_name
+            if user.username:
+                nickname = f"@{user.username}"
             
     # Telegram-тег для логування
     telegram_tag = f"@{user.username}" if user.username else user.full_name
 
-    # ВИПРАВЛЕННЯ: Використовуємо sheets з контексту
-    sheets = context.application.bot_data['sheets_helper']
     # Передаємо telegram_tag до методу update_chapter_status
     response = sheets.update_chapter_status(title, chapter, role, status_char, nickname, telegram_tag)
     await update.message.reply_text(response)
