@@ -641,7 +641,7 @@ def parse_chapters_arg(chapter_arg):
     
     if range_match:
         start_str = range_match.group(1)
-        end_str = range_match.group(4) # Група 4 відповідає початку другого num_pattern
+        end_str = range_match.group(3) 
         
         try:
             start = float(start_str)
