@@ -90,6 +90,58 @@ class SheetsHelper:
                 # Додаємо заголовки в 3-й рядок
                 worksheet.insert_row(headers, 3) 
             return worksheet
+        
+    def _copy_formatting_and_insert_data(self, worksheet, start_row, new_rows_data):
+        """
+        Копіює форматування рядка `start_row` на нові рядки і вставляє дані.
+        Використовує API-метод batch_update для копіювання і вставки.
+        """
+        num_new_rows = len(new_rows_data)
+        if num_new_rows == 0:
+            return
+
+        # 1. Визначаємо індекс рядка, з якого будемо копіювати форматування.
+        # Це рядки з даними (після заголовків), тому start_row >= 4
+        source_row_index = start_row 
+        
+        # 2. Вставляємо пусті рядки (з форматуванням)
+        # Спочатку дублюємо останній заповнений рядок 'num_new_rows' разів.
+        # Це копіює ФОРМАТУВАННЯ, але також копіює вміст.
+        
+        # Ми будемо вставляти нові рядки ПІСЛЯ останнього заповненого (source_row_index)
+        worksheet.insert_row(
+            [''] * len(worksheet.row_values(source_row_index)), 
+            index=source_row_index + 1, 
+            value_input_option='USER_ENTERED'
+        )
+        
+        # Якщо треба вставити більше одного рядка, дублюємо кілька разів
+        for i in range(1, num_new_rows):
+             worksheet.insert_row(
+                [''] * len(worksheet.row_values(source_row_index + i)), 
+                index=source_row_index + i + 1, 
+                value_input_option='USER_ENTERED'
+            )
+            
+        # 3. Підготовка даних для пакетного оновлення
+        data_to_update = []
+        for i, row_data in enumerate(new_rows_data):
+            row_index_to_update = source_row_index + 1 + i
+            
+            # gspread використовує R1C1 notation, де рядок 1 - це індекс 1
+            start_cell = gspread.utils.rowcol_to_a1(row_index_to_update, 1)
+            end_cell = gspread.utils.rowcol_to_a1(row_index_to_update, len(row_data))
+            
+            data_to_update.append({
+                'range': f'{worksheet.title}!{start_cell}:{end_cell}',
+                'values': [row_data]
+            })
+            
+        # 4. Оновлення значень у нових рядках (які вже мають форматування)
+        self.spreadsheet.batch_update({
+            'value_input_option': 'USER_ENTERED',
+            'data': data_to_update
+        })
             
     def _initialize_sheets(self):
         """Ініціалізує основні аркуші (Журнал; Users; Тайтли);"""
@@ -247,6 +299,7 @@ class SheetsHelper:
         """Додає один або кілька розділів до аркуша тайтлу;"""
         if not self.spreadsheet: return "Помилка підключення до таблиці;"
         try:
+            # ... (код для отримання worksheet та заголовків) ...
             try:
                 worksheet = self.spreadsheet.worksheet(title_name)
             except gspread.WorksheetNotFound:
@@ -279,11 +332,19 @@ class SheetsHelper:
             duplicate_chapters = [c for c in chapter_numbers if str(c) in existing_chapters]
             
             if not chapters_to_add:
-                # ВИПРАВЛЕННЯ: Використовуємо крапку з комою замість коми
                 return f"⚠️ Всі розділи ({'; '.join(map(str, duplicate_chapters))}) для '{title_name}' вже існують;"
             
-            # 3. Створення рядків для розділів
-            new_rows = []
+            # --- ЛОГІКА ДЛЯ КОПІЮВАННЯ ФОРМАТУВАННЯ ---
+            
+            # Визначаємо останній заповнений рядок (для копіювання форматування)
+            # Якщо даних немає (тільки заголовки); використовуємо рядок 4 (перший рядок даних)
+            
+            # ВИПРАВЛЕНО: Рядки даних починаються з індексу 3 у списку all_values.
+            # Оскільки заголовки в 3-му рядку, перший рядок даних - це 4-й рядок таблиці (індекс 3 у all_values)
+            last_data_row_index = len(all_values) 
+            
+            # 3. Створення рядків для розділів (якщо потрібно)
+            new_rows_data = []
             for chapter_number in chapters_to_add:
                 new_row_data = [str(chapter_number)] # Розділ
             
@@ -294,9 +355,16 @@ class SheetsHelper:
                 # ОНОВЛЕНО: Додаємо дані для Публікації (Дата=''; Статус='❌')
                 new_row_data.extend(['', '❌']) 
                 
-                new_rows.append(new_row_data)
+                new_rows_data.append(new_row_data)
 
-            worksheet.append_rows(new_rows)
+            # КОПІЮВАННЯ ФОРМАТУВАННЯ ТА ВСТАВКА ДАНИХ:
+            # Якщо є існуючі дані (last_data_row_index > 3); копіюємо форматування з останнього
+            if last_data_row_index > 3:
+                # Копіюємо форматування з останнього заповненого рядка (last_data_row_index)
+                self._copy_formatting_and_insert_data(worksheet, last_data_row_index, new_rows_data)
+            else:
+                 # Якщо даних ще немає, просто додаємо нові рядки без копіювання
+                 worksheet.append_rows(new_rows_data)
             
             # 4. Логування (якщо розділів багато; логуємо діапазон)
             if len(chapters_to_add) == 1:
