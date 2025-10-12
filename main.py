@@ -313,7 +313,7 @@ class SheetsHelper:
             # 2. Перевірка на дублікати розділів
             all_values = worksheet.get_all_values()
             data_rows = all_values[3:]
-            existing_chapters = {row[0] for row in data_rows if row and row[0].strip()} 
+            existing_chapters = {row[0].strip().lstrip("'") for row in data_rows if row and row[0].strip()} 
             
             chapters_to_add = [c for c in chapter_numbers if str(c) not in existing_chapters]
             duplicate_chapters = [c for c in chapter_numbers if str(c) in existing_chapters]
@@ -335,7 +335,7 @@ class SheetsHelper:
                     new_row_data.extend(['', '', '❌']) 
                 
                 # ОНОВЛЕНО: Додаємо дані для Публікації (Дата=''; Статус='❌')
-                new_row_data.extend(['', '❌']) 
+                new_row_data.extend(['', '❌'])
                 
                 new_rows_data.append(new_row_data)
 
