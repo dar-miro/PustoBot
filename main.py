@@ -335,7 +335,7 @@ class SheetsHelper:
                     new_row_data.extend(['', '', '❌']) 
                 
                 # ОНОВЛЕНО: Додаємо дані для Публікації (Дата=''; Статус='❌')
-                new_row_data.extend(['', '❌']) 
+                new_row_data.extend(['', '❌'])
                 
                 new_rows_data.append(new_row_data)
 
