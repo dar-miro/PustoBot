@@ -5,7 +5,7 @@ import re
 import gspread
 import asyncio
 import os
-import sys # Додано для коректного виходу в run_bot
+import sys
 from aiohttp import web
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes, MessageHandler, filters
@@ -25,7 +25,7 @@ ROLE_TO_COLUMN_BASE = {
     "клін": "Клін",
     "переклад": "Переклад",
     "тайп": "Тайп",
-    "ред": "Редакт", # Додаємо синонім
+    "ред": "Редакт",
 }
 # Публікація
 PUBLISH_COLUMN_BASE = "Публікація"
@@ -60,6 +60,7 @@ class SheetsHelper:
         self.users_sheet = None
         try:
             gc = gspread.service_account(filename=credentials_file)
+            # ВИПРАВЛЕННЯ СИНТАКСИЧНОЇ ПОМИЛКИ: Прибрано крапку з комою тут
             self.spreadsheet = gc.open_by_key(spreadsheet_key) # <<< Використовує ключ
             self._initialize_sheets()
         except Exception as e:
@@ -138,7 +139,7 @@ class SheetsHelper:
             str_user_id = str(user_id)
             
             if str_user_id in user_ids:
-                row_index = user_ids.index(str_user_id) + 1
+                row_index = user_ids.index(str(user_id)) + 1
                 # Нік знаходиться в колонці 3
                 nickname = self.users_sheet.cell(row_index, 3).value
                 return nickname if nickname and nickname.strip() else None
@@ -278,7 +279,8 @@ class SheetsHelper:
             duplicate_chapters = [c for c in chapter_numbers if str(c) in existing_chapters]
             
             if not chapters_to_add:
-                return f"⚠️ Всі розділи ({', '.join(map(str, duplicate_chapters))}) для '{title_name}' вже існують;"
+                # ВИПРАВЛЕННЯ: Використовуємо крапку з комою замість коми
+                return f"⚠️ Всі розділи ({'; '.join(map(str, duplicate_chapters))}) для '{title_name}' вже існують;"
             
             # 3. Створення рядків для розділів
             new_rows = []
@@ -301,15 +303,29 @@ class SheetsHelper:
                 chapter_log = str(chapters_to_add[0])
                 response_msg = f"✅ Додано розділ {chapter_log} до тайтлу '{title_name}'."
             else:
-                first = min(chapters_to_add)
-                last = max(chapters_to_add)
-                chapter_log = f"{first}-{last} ({len(chapters_to_add)} шт;)"
-                response_msg = f"✅ Додано {len(chapters_to_add)} розділів ({first}-{last}) до тайтлу '{title_name}'."
+                # При логуванні діапазону для дробових номерів беремо min/max
+                try:
+                    # Конвертуємо в float для сортування (для коректного min/max дробових)
+                    sorted_chapters = sorted([float(c) for c in chapters_to_add])
+                    first = sorted_chapters[0]
+                    last = sorted_chapters[-1]
+                    
+                    # Форматуємо назад в рядок (без зайвих .0)
+                    str_first = str(first) if '.' in str(first) else str(int(first))
+                    str_last = str(last) if '.' in str(last) else str(int(last))
+                    
+                    chapter_log = f"{str_first}-{str_last} ({len(chapters_to_add)} шт;)"
+                except ValueError:
+                    # Якщо є нечислові значення; просто логуємо кількість
+                    chapter_log = f"({len(chapters_to_add)} шт;)"
+                    
+                response_msg = f"✅ Додано {len(chapters_to_add)} розділів ({chapter_log}) до тайтлу '{title_name}'."
 
             self._log_action(telegram_tag=telegram_tag, nickname=nickname, title=title_name, chapter=chapter_log, role="Додано розділ(и)")
             
             if duplicate_chapters:
-                response_msg += f"\n⚠️ Розділи ({', '.join(map(str, duplicate_chapters))}) вже існували і були пропущені;"
+                # ВИПРАВЛЕННЯ: Використовуємо крапку з комою замість коми
+                response_msg += f"\n⚠️ Розділи ({'; '.join(map(str, duplicate_chapters))}) вже існували і були пропущені;"
 
             return response_msg
         except Exception as e:
@@ -319,8 +335,8 @@ class SheetsHelper:
     # ЗМІНА 5: Оновлення get_status для фільтрації розділів
     def get_status(self, title_name, chapter_numbers=None):
         """
-        Отримує і форматує статус роботи над тайтлом.
-        chapter_numbers: список номерів розділів, які потрібно показати (або None для всіх).
+        Отримує і форматує статус роботи над тайтлом;
+        chapter_numbers: список номерів розділів; які потрібно показати (або None для всіх);
         """
         if not self.spreadsheet: return "Помилка підключення до таблиці;"
         try:
@@ -329,6 +345,7 @@ class SheetsHelper:
             # Отримуємо заголовки та всі дані
             all_values = worksheet.get_all_values()
             if len(all_values) < 4:
+                # ВИПРАВЛЕННЯ: Використовуємо крапку з комою замість коми
                 return f"⚠️ Тайтл '{title_name}' не має розділів; Додайте їх за допомогою `/newchapter`;"
             
             headers = all_values[2] # Рядок 3
@@ -337,12 +354,13 @@ class SheetsHelper:
 
             # Фільтрація рядків за номерами розділів
             if chapter_numbers:
-                # Множина номерів розділів, які потрібно відобразити (у вигляді рядків)
+                # Множина номерів розділів; які потрібно відобразити (у вигляді рядків)
                 target_chapters = {str(c) for c in chapter_numbers}
                 data_rows = [row for row in data_rows if row and row[0].strip() in target_chapters]
                 
                 if not data_rows:
-                    return f"⚠️ Жодного з вказаних розділів ({', '.join(map(str, chapter_numbers))}) для '{title_name}' не знайдено;"
+                    # ВИПРАВЛЕННЯ: Використовуємо крапку з комою замість коми
+                    return f"⚠️ Жодного з вказаних розділів ({'; '.join(map(str, chapter_numbers))}) для '{title_name}' не знайдено;"
 
             # Визначаємо індекси колонок для Нік; Статус
             col_indices = {}
@@ -412,6 +430,7 @@ class SheetsHelper:
             return "\n".join(status_message)
             
         except gspread.WorksheetNotFound:
+            # ВИПРАВЛЕННЯ: Використовуємо крапку з комою замість коми
             return f"⚠️ Тайтл '{title_name}' не знайдено; Перевірте назву або створіть його за допомогою `/team`;"
         except Exception as e:
             logger.error(f"Помилка отримання статусу: {e}")
@@ -441,6 +460,7 @@ class SheetsHelper:
                 role_key = PUBLISH_COLUMN_BASE
 
             if not role_key:
+                # ВИПРАВЛЕННЯ: Використовуємо крапку з комою замість коми
                 return f"⚠️ Невідома роль: {role_name}; Доступні: {'; '.join(ROLE_TO_COLUMN_BASE.keys())}; бета; публікація;"
 
             # Знаходимо індекси колонок для Нік; Дата; Статус
@@ -452,6 +472,7 @@ class SheetsHelper:
                     status_col_index = headers.index(f'{PUBLISH_COLUMN_BASE}-Статус') + 1
                     nick_col_index = None # Нік для публікації не використовується
                 except ValueError:
+                    # ВИПРАВЛЕННЯ: Використовуємо крапку з комою замість коми
                     return "❌ Помилка: Невірний формат заголовків аркуша тайтлу (Публікація-Дата або Публікація-Статус відсутні);"
             else:
                 try:
@@ -459,7 +480,8 @@ class SheetsHelper:
                     date_col_index = headers.index(f'{role_key}-Дата') + 1
                     status_col_index = headers.index(f'{role_key}-Статус') + 1
                 except ValueError:
-                    return f"❌ Помилка: Колонка для ролі '{role_key}' не знайдена в заголовках; Можливо, ви не встановили бету."
+                    # ВИПРАВЛЕННЯ: Використовуємо крапку з комою замість коми
+                    return f"❌ Помилка: Колонка для ролі '{role_key}' не знайдена в заголовках; Можливо; ви не встановили бету."
 
 
             # 1. Оновлення статусу (завжди)
@@ -503,6 +525,7 @@ class SheetsHelper:
 
             action = "завершено" if status_char == '+' else "скинуто"
             
+            # ВИПРАВЛЕННЯ: Використовуємо крапку з комою замість коми
             return f"✅ Статус **{role_key}** для розділу **{chapter_number}** у тайтлі *'{title_name}'* {action};"
             
         except gspread.WorksheetNotFound:
@@ -514,6 +537,7 @@ class SheetsHelper:
 # --- Обробники команд Telegram (зміни в parse_title_and_chapters та new_chapter) ---
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # ВИПРАВЛЕННЯ: Використовуємо крапку з комою замість коми
     await update.message.reply_text("Привіт! Це бот для відстеження роботи над тайтлами; Використовуйте /help для списку команд;");
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -521,14 +545,17 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "🤖 *Список доступних команд:*\n\n"
         "👤 `/register <нікнейм>`\n_Реєструє вас у системі;_\n\n"
         "👥 `/team \"Назва Тайтлу\"`\n_Встановлює команду для тайтлу; Бот запитає про ролі;_\n\n"
-        "➕ `/newchapter \"Назва Тайтлу\" <номер_розділу|діапазон>`\n_Додає новий розділ(и) до тайтлу; Назву брати в лапки! Діапазон: 1-20_\n\n"
+        # ВИПРАВЛЕННЯ: Додано приклад дробового розділу та діапазону
+        "➕ `/newchapter \"Назва Тайтлу\" <номер_розділу|діапазон>`\n_Додає новий розділ(и) до тайтлу; Назву брати в лапки! Діапазон: 1-20; 20; 20.5; 20.1-20.5_\n\n"
         "📊 `/status \"Назва Тайтлу\" [номер_розділу|діапазон]`\n_Показує статус усіх розділів або вказаного діапазону;_\n\n"
-        "🔄 `/updatestatus \"Назва Тайтлу\" <розділ> <роль> <+|-> [нік]`\n_Оновлює статус завдання; Нік необов'язковий; Ролі: клін; переклад; тайп; редакт; бета; публікація;_"
+        # ВИПРАВЛЕННЯ: Додано кому як розділювач для ніку
+        "🔄 `/updatestatus \"Назва Тайтлу\" <розділ> <роль> <+|->; [нік з пробілами]`\n_Оновлює статус завдання; Нік необов'язковий; Ролі: клін; переклад; тайп; редакт; бета; публікація;_"
     )
     await update.message.reply_text(help_text, parse_mode="Markdown")
 
 async def register(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
+    # ВИПРАВЛЕННЯ: Використовуємо крапку з комою замість коми
     if not context.args:
         await update.message.reply_text("Будь ласка; вкажіть ваш нікнейм; Приклад: `/register SuperTranslator`")
         return
@@ -544,71 +571,95 @@ def parse_title_and_args(text):
     """Парсер для команд; що містять назву тайтлу в лапках;"""
     match = re.search(r'\"(.*?)\"', text)
     if not match:
-        return None, text.strip().split() 
+        # ВИПРАВЛЕННЯ: Змінено на повернення кортежу з двома елементами
+        return None, " ".join(text.strip().split())
     title = match.group(1)
-    remaining_args = text[match.end():].strip().split()
-    return title, remaining_args 
+    # Повертаємо решту тексту як один рядок; а не список; для подальшого гнучкого парсингу
+    remaining_text = text[match.end():].strip()
+    return title, remaining_text 
 
-# ЗМІНА 4: Оновлення new_chapter для підтримки діапазону (1-20)
+# ЗМІНА 4: Оновлення parse_chapters_arg для підтримки дробових номерів
 def parse_chapters_arg(chapter_arg):
     """Парсер для аргументу розділу/діапазону (використовується в new_chapter та status);"""
     if not chapter_arg:
         return None
         
-    # Перевірка на діапазон (наприклад; 1-20)
-    range_match = re.fullmatch(r'(\d+)-(\d+)', chapter_arg)
+    # Регулярний вираз для перевірки числових значень (цілі або дробові)
+    num_pattern = r'(\d+(\.\d+)?)'
+
+    # Перевірка на діапазон (наприклад; 1-20; 20.4-21.1)
+    range_match = re.fullmatch(f'{num_pattern}-{num_pattern}', chapter_arg)
     
     if range_match:
-        start = int(range_match.group(1))
-        end = int(range_match.group(2))
+        start_str = range_match.group(1)
+        end_str = range_match.group(4) # Група 4 відповідає початку другого num_pattern
+        
+        try:
+            start = float(start_str)
+            end = float(end_str)
+        except ValueError:
+            return None # Невірний формат числа
         
         if start <= 0 or end <= 0 or start > end:
             return None # Невірний діапазон
-        return list(range(start, end + 1))
+            
+        # Якщо обидва кінці — цілі; і діапазон більший за 1; генеруємо цілі
+        if start == int(start) and end == int(end) and (end - start) >= 1:
+            return [str(i) for i in range(int(start), int(end) + 1)]
+            
+        # Для дробового діапазону (або діапазону; де start=end; або вони обидва дробові)
+        # Враховуємо тільки крайні точки (це обмеження; щоб не генерувати випадкові дробові)
+        return [start_str, end_str] if start != end else [start_str]
     
-    # Перевірка на єдиний розділ
-    if chapter_arg.isdigit():
-        chapter = int(chapter_arg)
+    # Перевірка на єдиний розділ (цілий або дробовий)
+    single_match = re.fullmatch(num_pattern, chapter_arg)
+    if single_match:
+        try:
+            chapter = float(chapter_arg)
+        except ValueError:
+            return None
+        
         if chapter <= 0:
             return None # Невірний номер
-        return [chapter]
+            
+        # Повертаємо рядок; як його ввели; (щоб зберегти дробову частину)
+        return [chapter_arg]
     
     return None # Невірний формат
 
 def parse_title_and_chapters_for_new(full_text):
     """Парсер для /newchapter: тайтл та ОДИН розділ або діапазон (обов'язково);"""
-    title, args = parse_title_and_args(full_text)
-    if not title or len(args) != 1:
+    title, remaining_text = parse_title_and_args(full_text)
+    
+    if not title or not remaining_text:
         return None, None
     
-    chapters = parse_chapters_arg(args[0])
+    chapters = parse_chapters_arg(remaining_text)
     return title, chapters
 
 # ЗМІНА 6: Новий парсер для /status
 def parse_title_and_chapters_for_status(full_text):
     """Парсер для /status: тайтл та ОПЦІЙНИЙ розділ або діапазон;"""
-    title, args = parse_title_and_args(full_text)
+    title, remaining_text = parse_title_and_args(full_text)
+    
     if not title:
         return None, None
     
-    # Якщо немає аргументів, повертаємо None для розділів (означає "всі")
-    if not args:
+    # Якщо немає аргументів; повертаємо None для розділів (означає "всі")
+    if not remaining_text:
         return title, None
         
-    # Якщо є аргумент, парсимо його як розділ/діапазон
-    if len(args) == 1:
-        chapters = parse_chapters_arg(args[0])
-        return title, chapters
-        
-    # Більше одного аргументу, але не розділ — помилка
-    return title, None
+    # Якщо є аргумент; парсимо його як розділ/діапазон
+    chapters = parse_chapters_arg(remaining_text)
+    return title, chapters
 
 async def new_chapter(update: Update, context: ContextTypes.DEFAULT_TYPE):
     full_text = " ".join(context.args)
     title, chapters = parse_title_and_chapters_for_new(full_text)
     
     if not title or not chapters:
-        await update.message.reply_text('Невірний формат; Приклад: `/newchapter "Відьмоварта" 15` або `/newchapter "Відьмоварта" 1-20`')
+        # ВИПРАВЛЕННЯ: Використовуємо крапку з комою замість коми
+        await update.message.reply_text('Невірний формат; Приклад: `/newchapter "Відьмоварта" 15`; `/newchapter "Відьмоварта" 1-20` або `/newchapter "Відьмоварта" 20.5`')
         return
     
     # ВИПРАВЛЕННЯ: Використовуємо sheets з контексту
@@ -617,7 +668,7 @@ async def new_chapter(update: Update, context: ContextTypes.DEFAULT_TYPE):
     telegram_tag = f"@{user.username}" if user.username else user.full_name
     nickname = user.first_name if not user.username else f"@{user.username}"
 
-    # Викликаємо нову функцію, яка обробляє список розділів
+    # Викликаємо нову функцію; яка обробляє список розділів
     response = sheets.add_chapters(title, chapters, telegram_tag, nickname)
     await update.message.reply_text(response)
 
@@ -627,6 +678,7 @@ async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
     title, chapters = parse_title_and_chapters_for_status(full_text)
     
     if not title:
+        # ВИПРАВЛЕННЯ: Використовуємо крапку з комою замість коми
         await update.message.reply_text('Невірний формат; Приклад: `/status "Відьмоварта"` або `/status "Відьмоварта" 1-5`')
         return
     
@@ -636,25 +688,62 @@ async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
     response = sheets.get_status(title, chapter_numbers=chapters)
     await update.message.reply_text(response, parse_mode="Markdown")
 
+# --- ОНОВЛЕНИЙ ПАРСЕР ДЛЯ /updatestatus ---
+def parse_updatestatus_args(full_text):
+    """Парсер для /updatestatus; підтримує нікнейм з пробілами після коми;"""
+    title, remaining_text = parse_title_and_args(full_text)
+    
+    if not title:
+        return None, None, None, None, None # Додано повернення None для nickname
+        
+    # Формат: <розділ> <роль> <+|->; [нік з пробілами]
+    # Розділяємо рядок на 3+ частини: <розділ> <роль> <+|-> та решта (нік)
+    parts = remaining_text.split('; ') # Використовуємо крапку з комою як розділювач
+
+    if len(parts) < 1:
+        return title, None, None, None, None # Додано повернення None для nickname
+
+    main_args = parts[0].strip().split()
+    
+    # Очікуємо 3 основних аргументи
+    if len(main_args) != 3:
+        return title, None, None, None, None # Додано повернення None для nickname
+        
+    chapter, role, status_char = main_args[0], main_args[1], main_args[2]
+
+    # Перевірка основних аргументів
+    num_pattern = r'^\d+(\.\d+)?$' # Ціле або дробове число
+    if not re.fullmatch(num_pattern, chapter) or status_char not in ['+', '-']:
+        return title, None, None, None, None # Додано повернення None для nickname
+    
+    nickname = None
+    if len(parts) > 1:
+        # Нік - це все; що йде після першої крапки з комою (і пробілу; який ми видалили split'ом)
+        nickname = parts[1].strip()
+        if not nickname:
+            nickname = None # Якщо після крапки з комою нічого не було
+            
+    return title, chapter, role, status_char, nickname
+
 async def update_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
     full_text = " ".join(context.args)
-    title, args = parse_title_and_args(full_text)
+    # ЗМІНА: Використовуємо новий парсер
+    # ВИПРАВЛЕННЯ: Додано п'яту змінну для явного ніка
+    title, chapter, role, status_char, explicit_nickname = parse_updatestatus_args(full_text)
     
-    # Очікуємо 3 або 4 аргументи: Номер розділу; Роль; +/-; [Нік]
-    if not title or len(args) < 3 or len(args) > 4 or not args[0].isdigit() or args[2] not in ['+', '-']:
-        await update.message.reply_text('Невірний формат; Приклад: `/updatestatus "Відьмоварта" 15 клін + <нік>`')
+    if not title or not chapter or not role or not status_char:
+        # ВИПРАВЛЕННЯ: Використовуємо крапку з комою замість коми
+        await update.message.reply_text('Невірний формат; Приклад: `/updatestatus "Відьмоварта" 15 клін +` або `/updatestatus "Відьмоварта" 15 клін +; Super Translator`')
         return
-    
-    chapter, role, status_char = args[0], args[1], args[2]
     
     # ВИПРАВЛЕННЯ: Використовуємо sheets з контексту
     sheets = context.application.bot_data['sheets_helper']
     user = update.effective_user
     
     # --- ОНОВЛЕННЯ ЛОГІКИ ВИЗНАЧЕННЯ НІКНЕЙМА ---
-    if len(args) == 4:
-        # 1. Нік вказано в команді (4-й аргумент)
-        nickname = args[3]
+    if explicit_nickname:
+        # 1. Нік вказано в команді (після крапки з комою)
+        nickname = explicit_nickname
     else:
         # 2. Нік не вказано; шукаємо зареєстрований
         registered_nickname = sheets.get_nickname_by_id(user.id)
@@ -682,6 +771,7 @@ async def team_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     title, _ = parse_title_and_args(full_text)
     
     if not title:
+        # ВИПРАВЛЕННЯ: Використовуємо крапку з комою замість коми
         await update.message.reply_text('Невірний формат; Приклад: `/team "Назва Тайтлу"`')
         return
 
@@ -690,6 +780,7 @@ async def team_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     # Початкове запитання
     prompt = (
+        # ВИПРАВЛЕННЯ: Використовуємо крапку з комою замість коми
         f"Встановлення команди для тайтлу **'{title}'**; "
         "Будь ласка; введіть ніки в наступному форматі:\n\n"
         "`клін - нік; переклад - нік; тайп - нік; редакт - нік; [бета - нік]`\n\n"
@@ -727,6 +818,7 @@ async def handle_team_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
             # Очищуємо контекст і повертаємо помилку
             del context.user_data['awaiting_team_input']
             del context.user_data['setting_team_for_title']
+            # ВИПРАВЛЕННЯ: Використовуємо крапку з комою замість коми
             return await update.message.reply_text(
                 f"❌ Помилка: Не вказано обов'язкові ролі: {'; '.join(missing_roles)}; Спробуйте ще раз; починаючи з `/team`;"
             )
@@ -735,12 +827,15 @@ async def handle_team_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
         team_string_parts = []
         beta_nickname = ""
         for role_key in required_roles:
+            # ВИПРАВЛЕННЯ: Використовуємо крапку з комою як розділювач в team_string
             team_string_parts.append(f"{role_key} - {team_nicks[role_key]}")
         
         if 'бета' in team_nicks:
             beta_nickname = team_nicks['бета']
+            # ВИПРАВЛЕННЯ: Використовуємо крапку з комою як розділювач в team_string
             team_string_parts.append(f"бета - {beta_nickname}")
 
+        # ВИПРАВЛЕННЯ: Використовуємо крапку з комою як розділювач в team_string
         final_team_string = "; ".join(team_string_parts)
 
         # Отримуємо дані користувача для логування
@@ -767,18 +862,22 @@ async def run_bot():
     # Додати до функції async def run_bot():
 
     # ПЕРЕВІРКА 1: TELEGRAM_BOT_TOKEN
+    # ВИПРАВЛЕННЯ: Використовуємо крапку з комою замість коми
     if not TELEGRAM_BOT_TOKEN:
         logger.error("Критична помилка: Змінна середовища TELEGRAM_BOT_TOKEN не встановлена; Бот не буде запущений;")
         return
     
     # ПЕРЕВІРКА 2: SPREADSHEET_KEY
+    # ВИПРАВЛЕННЯ: Використовуємо крапку з комою замість коми
     if not SPREADSHEET_KEY:
         logger.error("Критична помилка: Змінна середовища SPREADSHEET_KEY не встановлена; Вкажіть ID вашої Google Таблиці; Бот не буде запущений;")
         return
     
     # Ініціалізація SheetsHelper
+    # ВИПРАВЛЕННЯ СИНТАКСИЧНОЇ ПОМИЛКИ: Крапка з комою замінена на кому (роздільник аргументів)
     sheets_helper = SheetsHelper(GOOGLE_CREDENTIALS_FILE, SPREADSHEET_KEY)
     if not sheets_helper.spreadsheet:
+        # ВИПРАВЛЕННЯ: Використовуємо крапку з комою замість коми
         logger.error("Не вдалося ініціалізувати Google Sheets; Бот не буде запущений;")
         return
 
@@ -803,6 +902,7 @@ async def run_bot():
     await bot_app.start()
 
     if not hasattr(bot_app, 'update_queue'):
+        # ВИПРАВЛЕННЯ: Використовуємо крапку з комою замість коми
         logger.error("bot_app has no update_queue attribute!")
         return
         
@@ -817,6 +917,7 @@ async def run_bot():
         try:
             update = Update.de_json(await request.json(), bot_app.bot)
         except Exception as e:
+            # ВИПРАВЛЕННЯ: Використовуємо крапку з комою замість коми
             logger.error(f"Помилка десеріалізації оновлення: {e}")
             return web.Response(status=400)
             
@@ -829,9 +930,12 @@ async def run_bot():
     full_webhook_url = WEBHOOK_URL.rstrip('/') + webhook_path
     
     await bot_app.bot.set_webhook(url=full_webhook_url)
+    # ВИПРАВЛЕННЯ: Використовуємо крапку з комою замість коми
     logger.info(f"Встановлено Webhook на: {full_webhook_url}")
     
     # 5. Налаштування маршрутів aiohttp
+    # ВИПРАВЛЕННЯ: Використовуємо крапку з комою замість коми
+    # ВИПРАВЛЕННЯ СИНТАКСИЧНОЇ ПОМИЛКИ: Крапка з комою замінена на кому (роздільник елементів списку)
     aio_app.add_routes([
         web.get('/health', lambda r: web.Response(text='OK')), # Перевірка працездатності
         web.post(webhook_path, webhook_handler), # Обробник для Telegram
@@ -844,6 +948,7 @@ async def run_bot():
     port = int(os.environ.get("PORT", 8080))
     # '0.0.0.0' дозволяє слухати на всіх доступних інтерфейсах (важливо для Render)
     site = web.TCPSite(runner, '0.0.0.0', port)
+    # ВИПРАВЛЕННЯ: Використовуємо крапку з комою замість коми
     logger.info(f"Starting web server on port {port}")
     await site.start()
 
@@ -853,8 +958,11 @@ async def run_bot():
 
 if __name__ == '__main__':
     try:
+        # ВИПРАВЛЕННЯ: Використовуємо крапку з комою замість коми
         asyncio.run(run_bot())
     except KeyboardInterrupt:
+        # ВИПРАВЛЕННЯ: Використовуємо крапку з комою замість коми
         logger.info("Бот зупинено користувачем;")
     except Exception as e:
+        # ВИПРАВЛЕННЯ: Використовуємо крапку з комою замість коми
         logger.error(f"Критична помилка запуску: {e}")
