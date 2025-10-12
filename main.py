@@ -244,52 +244,47 @@ class SheetsHelper:
     # --- ВИПРАВЛЕННЯ: КОПІЮВАННЯ ФОРМАТУВАННЯ ТА ВСТАВКА ДАНИХ ---
     # Використовуємо values_update для пакетного оновлення (ВИПРАВЛЯЄ ПОМИЛКУ 400)
     # та insert_row для копіювання форматування
+     # --- ВИПРАВЛЕННЯ: КОПІЮВАННЯ ФОРМАТУВАННЯ ТА ВСТАВКА ДАНИХ (БЕЗ values_update) ---
     def _copy_formatting_and_insert_data(self, worksheet, last_data_row_index, new_rows_data):
         """
-        Копіює форматування з останнього заповненого рядка (last_data_row_index); 
-        вставляючи нові рядки; і оновлює їх вміст;
+        Копіює форматування з останнього заповненого рядка, вставляючи нові рядки, 
+        і оновлює їх вміст, використовуючи послідовні виклики update().
+        
+        Примітка: gspread.insert_row копіює форматування, якщо рядок вставляється 
+        одразу після іншого рядка з форматуванням (за умови, що форматування 
+        застосовано до всього рядка).
         """
         num_new_rows = len(new_rows_data)
         if num_new_rows == 0:
             return
 
-        # 1. Вставляємо пусті рядки, щоб вони успадкували форматування від попереднього
-        # Ми вставляємо ПІСЛЯ останнього заповненого рядка, тому індекс = last_data_row_index + 1
-        
-        # Оскільки gspread.insert_row не копіює форматування, а просто додає, 
-        # для надійного копіювання форматування використовуємо insert_rows()
-        # Хоча insert_row() може не копіювати форматування на 100%,
-        # у більшості випадків (якщо форматування застосоване до всього рядка)
-        # додавання нового рядка ПІДТОМЕСТРУ (якщо це не останній рядок) успадковує стиль.
-        # Для мінімізації API-викликів та фіксу помилки 400, ми використовуємо найпростіший спосіб:
-        
-        # Визначаємо кількість колонок для коректного A1-діапазону
         num_cols = len(new_rows_data[0]) 
 
-        # Вставляємо всі необхідні порожні рядки
+        # 1. Вставляємо пусті рядки (успадковуючи форматування від попереднього рядка)
+        # Вставляємо ПІСЛЯ останнього заповненого рядка (last_data_row_index)
         for i in range(num_new_rows):
-             # Вставляємо новий рядок ПІСЛЯ (last_data_row_index + i)
-             worksheet.insert_row([''] * num_cols, index=last_data_row_index + i + 1)
+             # Вставляємо новий рядок. Індекс має бути збільшений лише один раз, 
+             # бо ми завжди вставляємо в одну й ту ж позицію — одразу після останнього 
+             # оригінального рядка, і вставлений рядок стає новим "останнім".
+             insertion_index = last_data_row_index + 1
+             worksheet.insert_row([''] * num_cols, index=insertion_index)
         
-        # 2. Підготовка даних для пакетного оновлення значень
-        data_to_update = []
+        # 2. Оновлення значень у нових рядках (які вже були вставлені)
+        # Нові рядки починаються з last_data_row_index + 1
         for i, row_data in enumerate(new_rows_data):
             # Рядок для оновлення знаходиться одразу після останнього оригінального рядка
+            # (index + 1) враховує, що ми вставили їх одразу після last_data_row_index
             row_index_to_update = last_data_row_index + 1 + i 
             
-            start_cell = gspread.utils.rowcol_to_a1(row_index_to_update, 1)
-            end_cell = gspread.utils.rowcol_to_a1(row_index_to_update, num_cols)
+            # Використовуємо A1-нотацію для діапазону
+            range_name = f'{gspread.utils.rowcol_to_a1(row_index_to_update, 1)}:{gspread.utils.rowcol_to_a1(row_index_to_update, num_cols)}'
             
-            data_to_update.append({
-                'range': f'{start_cell}:{end_cell}',
-                'values': [row_data]
-            })
-            
-        # 3. Оновлення значень у нових рядках (ВИКОРИСТОВУЄМО ПРАВИЛЬНИЙ МЕТОД values_update)
-        worksheet.values_update(
-            data_to_update, 
-            params={'valueInputOption': 'USER_ENTERED'}
-        )
+            # ВИКОРИСТОВУЄМО НАДІЙНИЙ МЕТОД: worksheet.update
+            worksheet.update(
+                range_name, 
+                [row_data], 
+                value_input_option='USER_ENTERED'
+            )
         
     # ЗМІНА 3: add_chapters для обробки одного або кількох розділів
     def add_chapters(self, title_name, chapter_numbers, telegram_tag, nickname):
