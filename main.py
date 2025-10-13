@@ -494,34 +494,66 @@ class SheetsHelper:
             return "❌ Сталася помилка при отриманні статусу;"
 
 
-    def update_chapter_status(self, title_name, chapter_number, role_name, status_char, nickname, telegram_tag):
-        """Оновлює статус; дату та нік в таблиці для вказаного розділу та ролі;"""
+    def update_chapter_status(self, title_name, chapter_number, role_name, date_str, status_char, nickname, telegram_tag):
+        """
+        Оновлює статус, дату та нік в таблиці для вказаного розділу та ролі.
+        Якщо розділ не знайдено, він створюється автоматично.
+        """
         if not self.spreadsheet: return "Помилка підключення до таблиці;"
         
+        # 1. Валідація та парсинг дати
+        try:
+            # Перевіряємо формат дати
+            work_date = datetime.strptime(date_str, '%Y-%m-%d').strftime("%d.%m.%Y")
+        except ValueError:
+            # ВИПРАВЛЕННЯ: Використовуємо крапку з комою замість коми
+            return "❌ Помилка формату дати; Використовуйте YYYY-MM-DD;"
+
         try:
             worksheet = self.spreadsheet.worksheet(title_name)
             headers = worksheet.row_values(3)
             
-            # Знаходимо індекс рядка розділу (починаємо з 4-го рядка)
+            # 2. Знаходження рядка розділу
             chapter_cells = worksheet.col_values(1, value_render_option='FORMATTED_VALUE')[3:] # З 4-го рядка
-            try:
-                row_index = chapter_cells.index(str(chapter_number)) + 4 # +4 тому; що рядок 1; 2; 3 пропущені; 
-            except ValueError:
-                return f"⚠️ Розділ {chapter_number} для '{title_name}' не знайдено;"
+            str_chapter_number = str(chapter_number)
             
-            # Парсинг ролі (включаючи синонім 'ред')
-            role_key = ROLE_TO_COLUMN_BASE.get(role_name.lower())
-            if role_name.lower() == 'бета':
-                role_key = 'Бета'
-            elif role_name.lower() == 'публікація':
-                role_key = PUBLISH_COLUMN_BASE
+            try:
+                # Індекс рядка в таблиці (починаючи з 1)
+                row_index = chapter_cells.index(str_chapter_number) + 4
+                chapter_found = True
+            except ValueError:
+                # 💥💥 НОВИЙ ФУНКЦІОНАЛ: Розділ не знайдено, потрібно його створити 💥💥
+                
+                # 2.1. Додавання розділу
+                logger.info(f"Розділ {chapter_number} не знайдено; Створення нового розділу...")
+                response_add = self.add_chapters(title_name, [chapter_number], telegram_tag, nickname)
+                
+                if response_add.startswith("❌"): 
+                    return f"❌ Не вдалося створити розділ {chapter_number}: {response_add}"
 
+                # 2.2. Повторний пошук індексу після додавання
+                chapter_cells = worksheet.col_values(1, value_render_option='FORMATTED_VALUE')[3:]
+                # Індекс останнього доданого розділу знаходиться в кінці
+                try:
+                    row_index = chapter_cells.index(str_chapter_number) + 4 
+                    chapter_found = True
+                except ValueError:
+                    # Це не повинно статися, але на випадок помилки
+                    # ВИПРАВЛЕННЯ: Використовуємо крапку з комою замість коми
+                    return f"❌ Критична помилка; Розділ {chapter_number} створено; але не знайдено для оновлення;"
+
+            # 3. Парсинг ролі та індексів колонок (логіка залишається як у старому update_chapter_status)
+            role_key = ROLE_TO_COLUMN_BASE.get(role_name.lower())
+            if role_name.lower() == 'бета': role_key = 'Бета'
+            elif role_name.lower() == 'публікація': role_key = PUBLISH_COLUMN_BASE
+            
             if not role_key:
                 # ВИПРАВЛЕННЯ: Використовуємо крапку з комою замість коми
                 return f"⚠️ Невідома роль: {role_name}; Доступні: {'; '.join(ROLE_TO_COLUMN_BASE.keys())}; бета; публікація;"
-
-            # Знаходимо індекси колонок для Нік; Дата; Статус
             
+            # ... (Логіка пошуку індексів колонок NICK, DATE, STATUS)
+            
+            # Знаходимо індекси колонок для Нік; Дата; Статус
             if role_key == PUBLISH_COLUMN_BASE:
                 try:
                     # ОНОВЛЕНО: Публікація має 2 колонки: Дата та Статус (Нік відсутній)
@@ -538,57 +570,60 @@ class SheetsHelper:
                     status_col_index = headers.index(f'{role_key}-Статус') + 1
                 except ValueError:
                     # ВИПРАВЛЕННЯ: Використовуємо крапку з комою замість коми
-                    return f"❌ Помилка: Колонка для ролі '{role_key}' не знайдена в заголовках; Можливо, ви не встановили бету."
+                    return f"❌ Помилка: Колонка для ролі '{role_key}' не знайдена в заголовках; Можливо; ви не встановили бету; або не додали заголовки;"
 
-
-            # 1. Оновлення статусу (завжди)
+            # 4. Виконання оновлення
+            
             new_status = '✅' if status_char == '+' else '❌'
             
-            # Оновлюємо значення
-            if role_key == PUBLISH_COLUMN_BASE: 
-                # Оновлюємо статус
-                worksheet.update_cell(row_index, status_col_index, new_status)
-                
-                # 2. Оновлення Дати (тільки для + або -)
-                if status_char == '+':
-                    current_date = datetime.now().strftime("%d.%m.%Y")
-                    worksheet.update_cell(row_index, date_col_index, current_date)
-                elif status_char == '-':
-                    # Прибираємо дату при відміні
-                    worksheet.update_cell(row_index, date_col_index, '')
+            updates = []
             
-            else: # Інші ролі
-                # Оновлюємо статус
-                worksheet.update_cell(row_index, status_col_index, new_status)
+            # Оновлення Статусу (завжди)
+            updates.append({'range': gspread.utils.rowcol_to_a1(row_index, status_col_index), 'values': [[new_status]]})
+            
+            if status_char == '+':
+                # Для '+' встановлюємо Нік та Дату
+                date_value = work_date
+                if nick_col_index: # Не для Публікації
+                    updates.append({'range': gspread.utils.rowcol_to_a1(row_index, nick_col_index), 'values': [[nickname]]})
+                updates.append({'range': gspread.utils.rowcol_to_a1(row_index, date_col_index), 'values': [[date_value]]})
                 
-                # 2. Оновлення Ніка та Дати (тільки для + або -)
-                if status_char == '+':
-                    current_date = datetime.now().strftime("%d.%m.%Y")
-                    worksheet.update_cell(row_index, nick_col_index, nickname)
-                    worksheet.update_cell(row_index, date_col_index, current_date)
-                elif status_char == '-':
-                    # Прибираємо нік та дату при відміні
-                    worksheet.update_cell(row_index, nick_col_index, '')
-                    worksheet.update_cell(row_index, date_col_index, '')
+                action = "завершено"
+                
+            elif status_char == '-':
+                # Для '-' прибираємо Нік та Дату
+                date_value = ''
+                if nick_col_index: # Не для Публікації
+                    updates.append({'range': gspread.utils.rowcol_to_a1(row_index, nick_col_index), 'values': [['']]})
+                updates.append({'range': gspread.utils.rowcol_to_a1(row_index, date_col_index), 'values': [['']]})
+                
+                action = "скинуто"
 
-            # 3. Логування
+            # Пакетне оновлення
+            worksheet.batch_update(updates)
+
+            # 5. Логування
             self._log_action(
-                telegram_tag=telegram_tag,
-                nickname=nickname,
-                title=title_name,
-                chapter=chapter_number,
+                telegram_tag=telegram_tag, 
+                nickname=nickname, 
+                title=title_name, 
+                chapter=chapter_number, 
                 role=f"{role_key}{status_char}"
             )
-
-            action = "завершено" if status_char == '+' else "скинуто"
             
-            # ВИПРАВЛЕННЯ: Використовуємо крапку з комою замість коми
-            return f"✅ Статус {role_key} для розділу {chapter_number} у тайтлі {title_name} {action};"
+            msg = f"✅ Статус {role_key} для розділу {chapter_number} у тайтлі {title_name} {action};"
+            if not chapter_found:
+                # ВИПРАВЛЕННЯ: Використовуємо крапку з комою замість коми
+                msg = f"✅ Розділ {chapter_number} не знайдено; Створено та оновлено статус {role_key} як {action};"
+
+            return msg
             
         except gspread.WorksheetNotFound:
-            return f"⚠️ Тайтл '{title_name}' не знайдено;"
+            # ВИПРАВЛЕННЯ: Використовуємо крапку з комою замість коми
+            return f"⚠️ Тайтл '{title_name}' не знайдено; Перевірте назву або створіть його за допомогою `/team`;"
         except Exception as e:
-            logger.error(f"Помилка оновлення статусу: {e}")
+            # ВИПРАВЛЕННЯ: Використовуємо крапку з комою замість коми
+            logger.error(f"Помилка оновлення статусу: {e}");
             return "❌ Сталася помилка при оновленні статусу;"
     
 # --- Обробники команд Telegram (зміни в parse_title_and_chapters та new_chapter) ---
@@ -710,24 +745,53 @@ def parse_title_and_chapters_for_status(full_text):
     chapters = parse_chapters_arg(remaining_text)
     return title, chapters
 
-async def new_chapter(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    full_text = " ".join(context.args)
-    title, chapters = parse_title_and_chapters_for_new(full_text)
-    
-    if not title or not chapters:
-        # ВИПРАВЛЕННЯ: Використовуємо крапку з комою замість коми
-        await update.message.reply_text('Невірний формат; Приклад: /newchapter "Тайтл" 15; /newchapter "Тайтл" 1-20')
-        return
-    
-    # ВИПРАВЛЕННЯ: Використовуємо sheets з контексту
-    sheets = context.application.bot_data['sheets_helper']
+async def updatestatus_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """
+    Оновлює статус виконання роботи. Якщо розділу не знайдено; створює його.
+    Формат: /updatestatus "Назва Тайтлу" <№ Розділу> <Роль> <Дата YYYY-MM-DD> <+/-|@Нік>
+    """
     user = update.effective_user
-    telegram_tag = f"@{user.username}" if user.username else user.full_name
-    nickname = user.first_name if not user.username else f"@{user.username}"
+    telegram_tag = user.username or f"id:{user.id}"
+    
+    # 1. Отримання Нікнейма
+    nickname = SheetsHelper.get_nickname_by_id(user.id)
+    if not nickname:
+        # ВИПРАВЛЕННЯ: Використовуємо крапку з комою замість коми
+        await update.message.reply_text("❌ Ви не зареєстровані; Будь ласка; використовуйте `/register <ваш_нікнейм>`;");
+        return
+        
+    # 2. Розбір аргументів
+    if len(context.args) < 5:
+        # ВИПРАВЛЕННЯ: Використовуємо крапку з комою замість коми
+        await update.message.reply_text("Помилка; Використовуйте формат: `/updatestatus \"Тайтл\" <№ Розділу> <Роль> <Дата YYYY-MM-DD> <+|->`");
+        return
 
-    # Викликаємо нову функцію; яка обробляє список розділів
-    response = sheets.add_chapters(title, chapters, telegram_tag, nickname)
-    await update.message.reply_text(response)
+    # Збираємо аргументи
+    args = context.args
+    
+    # Виділяємо Тайтл (якщо він у лапках, він буде першим елементом)
+    title_name = args[0].strip('\"')
+    
+    # Залишаємось на 5-ти обов'язкових аргументах: Розділ, Роль, Дата, Статус
+    if len(args) != 5:
+        # ВИПРАВЛЕННЯ: Використовуємо крапку з комою замість коми
+        await update.message.reply_text("Помилка; Використовуйте формат: `/updatestatus \"Тайтл\" <№ Розділу> <Роль> <Дата YYYY-MM-DD> <+|->`");
+        return
+        
+    chapter_number = args[1]
+    role = args[2].lower()
+    date_str = args[3]
+    status_char = args[4]
+    
+    if status_char not in ['+', '-']:
+        # ВИПРАВЛЕННЯ: Використовуємо крапку з комою замість коми
+        await update.message.reply_text("Невірний символ статусу; Використовуйте `+` (завершено) або `-` (скинути);");
+        return
+
+    # 3. Виклик оновленого методу SheetsHelper
+    # ВИПРАВЛЕННЯ: Використовуємо крапку з комою замість коми
+    response = SheetsHelper.update_chapter_status(title_name, chapter_number, role, date_str, status_char, nickname, telegram_tag);
+    await update.message.reply_text(response);
 
 async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
     full_text = " ".join(context.args)
@@ -851,6 +915,47 @@ async def miniapp_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "Натисніть кнопку; щоб відкрити міні-застосунок для зручного заповнення форми;",
         reply_markup=keyboard
     );
+
+async def web_app_data_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Обробляє дані; надіслані з Mini App; та конвертує їх у команду /updatestatus;"""
+    
+    # 1. Отримуємо дані
+    data_string = update.effective_message.web_app_data.data;
+    
+    # 2. Перевірка
+    # Mini App надсилає: /updatestatus "Тайтл" <№ Розділу> <Роль> <Дата> <+>
+    if not data_string.startswith('/updatestatus'):
+        # ВИПРАВЛЕННЯ: Використовуємо крапку з комою замість коми
+        return await update.effective_message.reply_text("Помилка; отримано невірний формат даних із застосунку;");
+
+    try:
+        # Просте розбиття, припускаючи, що тайтл у лапках
+        match = re.search(r'/updatestatus\s+"(.+)"\s+([\d\.]+)\s+(\w+)\s+([\d-]+)\s+([\+\-])', data_string)
+        if not match:
+             # ВИПРАВЛЕННЯ: Використовуємо крапку з комою замість коми
+             return await update.effective_message.reply_text("❌ Помилка; не вдалося розібрати команду з Mini App;");
+             
+        title_name, chapter_number, role, date_str, status_char = match.groups()
+        
+        # Налаштовуємо context.args для виклику updatestatus_command
+        context.args = [
+            f'"{title_name}"', # Тайтл у лапках
+            chapter_number,
+            role,
+            date_str,
+            status_char
+        ]
+        
+        # Викликаємо оновлений обробник
+        await updatestatus_command(update, context);
+        
+        # Фінальне підтвердження вже буде надіслано з updatestatus_command
+        return
+        
+    except Exception as e:
+        # ВИПРАВЛЕННЯ: Використовуємо крапку з комою замість коми
+        logger.error(f"Помилка при обробці команди Mini App: {e}");
+        await update.effective_message.reply_text(f"❌ Помилка при обробці команди Mini App: {e}");
 
 # --- ОБРОБНИК КОМАНДИ /team ---
 async def team_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -977,10 +1082,10 @@ async def run_bot():
     bot_app.add_handler(CommandHandler("help", help_command))
     bot_app.add_handler(CommandHandler("register", register))
     bot_app.add_handler(CommandHandler("team", team_command))
-    bot_app.add_handler(CommandHandler("newchapter", new_chapter))
     bot_app.add_handler(CommandHandler("status", status))
     bot_app.add_handler(CommandHandler("updatestatus", update_status))
     bot_app.add_handler(CommandHandler("app", miniapp_command))
+    bot_app.add_handler(MessageHandler(filters.StatusUpdate.WEB_APP_DATA, web_app_data_handler))
     
     # Обробник для відповіді на команду /team
     bot_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_team_input))

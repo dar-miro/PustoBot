@@ -163,72 +163,78 @@
     </div>
 
     <script>
-      document.addEventListener("DOMContentLoaded", () => {
-        const confirmBtn = document.getElementById("confirm-btn");
-        const cancelBtn = document.getElementById("cancel-btn");
-        const titleSelect = document.getElementById("title-select");
-        const dateInput = document.getElementById("date-input");
+        document.addEventListener('DOMContentLoaded', () => {
+            const confirmBtn = document.getElementById('confirm-btn');
+            const cancelBtn = document.getElementById('cancel-btn');
+            const titleSelect = document.getElementById('title-select');
+            const dateInput = document.getElementById('date-input');
 
-        // Ініціалізація Telegram Web App (для доступу до функціоналу Telegram)
-        if (window.Telegram && window.Telegram.WebApp) {
-          // Встановлення кольорів інтерфейсу
-          Telegram.WebApp.ready();
+            // Отримуємо посилання на групу радіо-кнопок
+            const roleRadios = document.querySelectorAll('input[name="role"]');
 
-          // Встановлення поточної дати як значення за замовчуванням (необов'язково)
-          dateInput.valueAsDate = new Date();
+            if (window.Telegram && window.Telegram.WebApp) {
+                Telegram.WebApp.ready();
+                dateInput.valueAsDate = new Date();
 
-          // Обробник для кнопки Підтвердження
-          confirmBtn.addEventListener("click", () => {
-            // Проста валідація для демонстрації
-            if (
-              document.querySelector("form-container") &&
-              !document.querySelector("form-container").checkValidity
-            ) {
-              // В реальному застосунку тут буде складна валідація всіх полів
-              // Поки що пропускаємо, оскільки це приклад
+                // Обробник для кнопки Підтвердження
+                confirmBtn.addEventListener('click', () => {
+                    const selectedTitle = titleSelect.value;
+                    const selectedDate = dateInput.value;
+                    let selectedRole = '';
+
+                    // Знаходимо вибрану роль
+                    roleRadios.forEach(radio => {
+                        if (radio.checked) {
+                            selectedRole = radio.value;
+                        }
+                    });
+
+                    // Проста валідація, щоб уникнути відправки порожніх даних
+                    if (!selectedTitle || !selectedRole || !selectedDate) {
+                        // ВИПРАВЛЕННЯ: Використовуємо крапку з комою замість коми
+                        if (Telegram.WebApp.showAlert) {
+                            Telegram.WebApp.showAlert('Будь ласка; заповніть усі поля;');
+                        } else {
+                            alert('Будь ласка; заповніть усі поля;');
+                        }
+                        return; // Зупиняємо відправку
+                    }
+
+                    // 1. ФОРМУВАННЯ КОМАНДИ БОТА
+                    // Ми імітуємо команду: /newchapter Тайтл Роль Дата (YYYY-MM-DD)
+                    // Для прикладу; візьмемо існуючу команду /newchapter
+                    const botCommand = `/newchapter ${selectedTitle} ${selectedRole} ${selectedDate}`;
+
+                    // 2. ВІДПРАВКА ДАНИХ БОТУ
+                    // Telegram.WebApp.sendData() надсилає рядок у повідомленні бота
+                    Telegram.WebApp.sendData(botCommand);
+
+                    // 3. ЗАКРИТТЯ
+                    Telegram.WebApp.close();
+                });
+
+                // Обробник для кнопки Скасування
+                cancelBtn.addEventListener('click', () => {
+                    Telegram.WebApp.close();
+                });
+            } else {
+                console.error('Telegram WebApp environment not detected.');
+                // Емуляція для локального тестування
+                confirmBtn.addEventListener('click', () => {
+                    const title = titleSelect.value || 'TITLE';
+                    const role = document.querySelector('input[name="role"]:checked')?.value || 'ROLE';
+                    const date = dateInput.value || 'DATE';
+                    alert(`Емуляція: Надсилається команда /newchapter ${title} ${role} ${date}`);
+                    const dummyChapter = '1.0';
+                    const botCommand = `/updatestatus "${selectedTitle}" ${dummyChapter} ${selectedRole} ${selectedDate} +`;
+
+                    // 2. ВІДПРАВКА ДАНИХ БОТУ
+                    Telegram.WebApp.sendData(botCommand);
+                });
+                cancelBtn.addEventListener('click', () => alert('Скасовано (Емуляція)'));
             }
-
-            const selectedTitle = titleSelect.value;
-            const selectedRole =
-              document.querySelector('input[name="role"]:checked')?.value ||
-              "Не вибрано";
-            const selectedDate = dateInput.value;
-
-            // Збір даних (поки що просто логуємо)
-            const formData = {
-              title: selectedTitle,
-              role: selectedRole,
-              date: selectedDate,
-            };
-            console.log("Дані для відправки:", formData);
-
-            // Відправка повідомлення в чат і закриття Mini App
-            // Дані (formData) можуть бути відправлені як рядок (наприклад, JSON) через WebApp.sendData()
-            Telegram.WebApp.sendData(
-              JSON.stringify({ status: "success", data: formData })
-            );
-            // Зазвичай WebApp.sendData() виконує роль закриття та відправки.
-            // Виклик .close() можна використовувати окремо.
-            Telegram.WebApp.close();
-          });
-
-          // Обробник для кнопки Скасування
-          cancelBtn.addEventListener("click", () => {
-            // Можна надіслати повідомлення про скасування, або просто закрити.
-            // Тут просто закриваємо.
-            Telegram.WebApp.close();
-          });
-        } else {
-          console.error("Telegram WebApp environment not detected.");
-          // Емуляція роботи кнопок для локального тестування
-          confirmBtn.addEventListener("click", () =>
-            alert("Підтверджено: (Емуляція) Успішно!")
-          );
-          cancelBtn.addEventListener("click", () =>
-            alert("Скасовано (Емуляція)")
-          );
-        }
-      });
+        });
     </script>
-  </body>
-</html>
+    </body>
+    
+    </html>
