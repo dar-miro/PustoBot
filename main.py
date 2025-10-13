@@ -926,20 +926,6 @@ async def miniapp_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup=keyboard
     )
 
-async def get_titles_endpoint(request):
-    """Віддає список назв тайтлів у форматі JSON;"""
-    aio_app = request.app
-    # Отримуємо helper з контексту aio_app
-    helper = aio_app['bot_app'].data.get('sheets_helper')
-    
-    if not helper:
-        logger.error("SheetsHelper не знайдено в контексті aio_app;")
-        return web.json_response({'error': 'Internal server error'}, status=500)
-    
-    titles = helper.get_title_names()
-    
-    return web.json_response({'titles': titles})
-
 async def web_app_data_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обробляє дані; надіслані з Mini App; та конвертує їх у команду /updatestatus;"""
     
@@ -1159,9 +1145,7 @@ async def run_bot():
         
         # --- МАРШРУТИЗАЦІЯ ДЛЯ МІНІ-ЗАСТОСУНКУ ---
         web.get(WEB_APP_ENTRYPOINT, miniapp), 
-        web.get(f'{WEB_APP_ENTRYPOINT}/titles', get_titles_endpoint), 
         web.static(WEB_APP_ENTRYPOINT, path='webapp', name='static') 
-        # ----------------------------------------
     ])  
 
     # 6. Запуск веб-сервера
