@@ -75,7 +75,23 @@ class SheetsHelper:
         except Exception as e:
             logger.error(f"Не вдалося підключитися до Google Sheets: {e}")
 
-    # ВИПРАВЛЕННЯ 1: Змінено логіку вставки заголовків
+    def get_title_names(self):
+        """Повертає список назв усіх аркушів (Тайтлів) у таблиці;"""
+        if not self.spreadsheet:
+    
+            logger.error("Помилка підключення до таблиці; Cannot fetch title names;")
+            return []
+        
+        try:
+            # Отримуємо всі аркуші та повертаємо їхні назви
+            worksheets = self.spreadsheet.worksheets()
+    
+            return [ws.title for ws in worksheets]
+        except Exception as e:
+    
+            logger.error(f"Помилка при отриманні назв аркушів: {e}")
+            return []
+
     def _get_or_create_worksheet(self, title_name, headers=None, force_headers=False):
         """
         Отримує або створює аркуш за назвою; 
@@ -136,7 +152,6 @@ class SheetsHelper:
         else:
             logger.warning("Аркуш 'Журнал' не ініціалізовано; логування пропущено;")
 
-    # --- НОВИЙ МЕТОД ДЛЯ ОТРИМАННЯ НІКНЕЙМА ---
     def get_nickname_by_id(self, user_id):
         """Отримує зареєстрований Нік користувача за його Telegram-ID;"""
         if not self.users_sheet: 
@@ -181,7 +196,6 @@ class SheetsHelper:
             logger.error(f"Помилка реєстрації: {e}")
             return "❌ Сталася помилка під час реєстрації;"
 
-    # ВИПРАВЛЕННЯ 2: set_team тепер лише встановлює команду в A2
     def set_team(self, title_name, team_string, beta_nickname, telegram_tag, nickname):
         """Створює аркуш (якщо його немає) та встановлює команду тайтлу в A2;"""
         if not self.spreadsheet: return "Помилка підключення до таблиці;"
@@ -250,11 +264,8 @@ class SheetsHelper:
             if header.endswith('-Статус')
         ]
         
-    # --- ВИПРАВЛЕННЯ: КОПІЮВАННЯ ФОРМАТУВАННЯ ТА ВСТАВКА ДАНИХ ---
-    # Використовуємо values_update для пакетного оновлення (ВИПРАВЛЯЄ ПОМИЛКУ 400)
-    # та insert_row для копіювання форматування
-     # --- ВИПРАВЛЕННЯ: КОПІЮВАННЯ ФОРМАТУВАННЯ ТА ВСТАВКА ДАНИХ (БЕЗ values_update) ---
-    # --- ВИПРАВЛЕНИЙ МЕТОД КОПІЮВАННЯ ФОРМАТУВАННЯ ---
+    # --- КОПІЮВАННЯ ФОРМАТУВАННЯ ТА ВСТАВКА ДАНИХ ---
+
     def _copy_formatting_and_insert_data(self, worksheet, last_data_row_index, new_rows_data):
         """
         Копіює форматування з останнього заповненого рядка, вставляючи нові рядки, 
@@ -402,7 +413,7 @@ class SheetsHelper:
             # Отримуємо заголовки та всі дані
             all_values = worksheet.get_all_values()
             if len(all_values) < 4:
-                # ВИПРАВЛЕННЯ: Використовуємо крапку з комою замість коми
+        
                 return f"⚠️ Тайтл '{title_name}' не має розділів; Додайте їх за допомогою `/newchapter`;"
             
             headers = all_values[2] # Рядок 3
@@ -416,7 +427,7 @@ class SheetsHelper:
                 data_rows = [row for row in data_rows if row and row[0].strip() in target_chapters]
                 
                 if not data_rows:
-                    # ВИПРАВЛЕННЯ: Використовуємо крапку з комою замість коми
+            
                     return f"⚠️ Жодного з вказаних розділів ({'; '.join(map(str, chapter_numbers))}) для '{title_name}' не знайдено;"
 
             # Визначаємо індекси колонок для Нік; Статус
@@ -487,7 +498,7 @@ class SheetsHelper:
             return "\n".join(status_message)
             
         except gspread.WorksheetNotFound:
-            # ВИПРАВЛЕННЯ: Використовуємо крапку з комою замість коми
+    
             return f"⚠️ Тайтл '{title_name}' не знайдено; Перевірте назву або створіть його за допомогою `/team`;"
         except Exception as e:
             logger.error(f"Помилка отримання статусу: {e}")
@@ -506,7 +517,7 @@ class SheetsHelper:
             # Перевіряємо формат дати
             work_date = datetime.strptime(date_str, '%Y-%m-%d').strftime("%d.%m.%Y")
         except ValueError:
-            # ВИПРАВЛЕННЯ: Використовуємо крапку з комою замість коми
+    
             return "❌ Помилка формату дати; Використовуйте YYYY-MM-DD;"
 
         try:
@@ -539,7 +550,7 @@ class SheetsHelper:
                     chapter_found = True
                 except ValueError:
                     # Це не повинно статися, але на випадок помилки
-                    # ВИПРАВЛЕННЯ: Використовуємо крапку з комою замість коми
+            
                     return f"❌ Критична помилка; Розділ {chapter_number} створено; але не знайдено для оновлення;"
 
             # 3. Парсинг ролі та індексів колонок (логіка залишається як у старому update_chapter_status)
@@ -548,7 +559,7 @@ class SheetsHelper:
             elif role_name.lower() == 'публікація': role_key = PUBLISH_COLUMN_BASE
             
             if not role_key:
-                # ВИПРАВЛЕННЯ: Використовуємо крапку з комою замість коми
+        
                 return f"⚠️ Невідома роль: {role_name}; Доступні: {'; '.join(ROLE_TO_COLUMN_BASE.keys())}; бета; публікація;"
             
             # ... (Логіка пошуку індексів колонок NICK, DATE, STATUS)
@@ -561,7 +572,7 @@ class SheetsHelper:
                     status_col_index = headers.index(f'{PUBLISH_COLUMN_BASE}-Статус') + 1
                     nick_col_index = None # Нік для публікації не використовується
                 except ValueError:
-                    # ВИПРАВЛЕННЯ: Використовуємо крапку з комою замість коми
+            
                     return "❌ Помилка: Невірний формат заголовків аркуша тайтлу (Публікація-Дата або Публікація-Статус відсутні);"
             else:
                 try:
@@ -569,7 +580,7 @@ class SheetsHelper:
                     date_col_index = headers.index(f'{role_key}-Дата') + 1
                     status_col_index = headers.index(f'{role_key}-Статус') + 1
                 except ValueError:
-                    # ВИПРАВЛЕННЯ: Використовуємо крапку з комою замість коми
+            
                     return f"❌ Помилка: Колонка для ролі '{role_key}' не знайдена в заголовках; Можливо; ви не встановили бету; або не додали заголовки;"
 
             # 4. Виконання оновлення
@@ -613,17 +624,17 @@ class SheetsHelper:
             
             msg = f"✅ Статус {role_key} для розділу {chapter_number} у тайтлі {title_name} {action};"
             if not chapter_found:
-                # ВИПРАВЛЕННЯ: Використовуємо крапку з комою замість коми
+        
                 msg = f"✅ Розділ {chapter_number} не знайдено; Створено та оновлено статус {role_key} як {action};"
 
             return msg
             
         except gspread.WorksheetNotFound:
-            # ВИПРАВЛЕННЯ: Використовуємо крапку з комою замість коми
+    
             return f"⚠️ Тайтл '{title_name}' не знайдено; Перевірте назву або створіть його за допомогою `/team`;"
         except Exception as e:
-            # ВИПРАВЛЕННЯ: Використовуємо крапку з комою замість коми
-            logger.error(f"Помилка оновлення статусу: {e}");
+    
+            logger.error(f"Помилка оновлення статусу: {e}")
             return "❌ Сталася помилка при оновленні статусу;"
     
 # --- Обробники команд Telegram (зміни в parse_title_and_chapters та new_chapter) ---
@@ -756,13 +767,13 @@ async def updatestatus_command(update: Update, context: ContextTypes.DEFAULT_TYP
     # 1. Отримання Нікнейма
     nickname = SheetsHelper.get_nickname_by_id(user.id)
     if not nickname:
-        # ВИПРАВЛЕННЯ: Використовуємо крапку з комою замість коми
+
         await update.message.reply_text("❌ Ви не зареєстровані; Будь ласка; використовуйте `/register <ваш_нікнейм>`;");
         return
         
     # 2. Розбір аргументів
     if len(context.args) < 5:
-        # ВИПРАВЛЕННЯ: Використовуємо крапку з комою замість коми
+
         await update.message.reply_text("Помилка; Використовуйте формат: `/updatestatus \"Тайтл\" <№ Розділу> <Роль> <Дата YYYY-MM-DD> <+|->`");
         return
 
@@ -774,7 +785,7 @@ async def updatestatus_command(update: Update, context: ContextTypes.DEFAULT_TYP
     
     # Залишаємось на 5-ти обов'язкових аргументах: Розділ, Роль, Дата, Статус
     if len(args) != 5:
-        # ВИПРАВЛЕННЯ: Використовуємо крапку з комою замість коми
+
         await update.message.reply_text("Помилка; Використовуйте формат: `/updatestatus \"Тайтл\" <№ Розділу> <Роль> <Дата YYYY-MM-DD> <+|->`");
         return
         
@@ -784,7 +795,7 @@ async def updatestatus_command(update: Update, context: ContextTypes.DEFAULT_TYP
     status_char = args[4]
     
     if status_char not in ['+', '-']:
-        # ВИПРАВЛЕННЯ: Використовуємо крапку з комою замість коми
+
         await update.message.reply_text("Невірний символ статусу; Використовуйте `+` (завершено) або `-` (скинути);");
         return
 
@@ -799,7 +810,7 @@ async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
     title, chapters = parse_title_and_chapters_for_status(full_text)
     
     if not title:
-        # ВИПРАВЛЕННЯ: Використовуємо крапку з комою замість коми
+
         await update.message.reply_text('Невірний формат; Приклад: /status "Тайтл" або /status "Тайтл" 1-5')
         return
     
@@ -853,7 +864,7 @@ async def update_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
     title, chapter, role, status_char, explicit_nickname = parse_updatestatus_args(full_text)
     
     if not title or not chapter or not role or not status_char:
-        # ВИПРАВЛЕННЯ: Використовуємо крапку з комою замість коми
+
         await update.message.reply_text('Невірний формат; Приклад: /updatestatus "Тайтл" 15 клін + або /updatestatus "Тайтл" 15 клін +; Super Translator`')
         return
     
@@ -887,16 +898,16 @@ async def update_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def miniapp_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обробляє команду /app та надсилає повідомлення з інлайн-кнопкою Mini App;"""
-    user = update.effective_user;
+    user = update.effective_user
     
     # ВИПРАВЛЕННЯ: Додайте константу WEB_APP_ENTRYPOINT
-    WEB_APP_ENTRYPOINT = "/miniapp";
+    WEB_APP_ENTRYPOINT = "/miniapp"
     
     # 1. Формуємо URL міні-застосунку
-    web_app_url = f"{WEBHOOK_URL.rstrip('/')}{WEB_APP_ENTRYPOINT}";
+    web_app_url = f"{WEBHOOK_URL.rstrip('/')}{WEB_APP_ENTRYPOINT}"
     
     # 2. Створюємо об'єкт WebAppInfo (тепер з telegram)
-    web_app_info = WebAppInfo(url=web_app_url);
+    web_app_info = WebAppInfo(url=web_app_url)
 
     # 3. Створюємо Інлайн-клавіатуру
     keyboard = InlineKeyboardMarkup( # <-- ВИКОРИСТОВУЄМО InlineKeyboardMarkup
@@ -908,31 +919,44 @@ async def miniapp_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 )
             ]
         ]
-    );
+    )
     
-    # ВИПРАВЛЕННЯ: Використовуємо крапку з комою замість коми
     await update.message.reply_text(
         "Натисніть кнопку; щоб відкрити міні-застосунок для зручного заповнення форми;",
         reply_markup=keyboard
-    );
+    )
+
+async def get_titles_endpoint(request):
+    """Віддає список назв тайтлів у форматі JSON;"""
+    aio_app = request.app
+    # Отримуємо helper з контексту aio_app
+    helper = aio_app['bot_app'].data.get('sheets_helper')
+    
+    if not helper:
+        logger.error("SheetsHelper не знайдено в контексті aio_app;")
+        return web.json_response({'error': 'Internal server error'}, status=500)
+    
+    titles = helper.get_title_names()
+    
+    return web.json_response({'titles': titles})
 
 async def web_app_data_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обробляє дані; надіслані з Mini App; та конвертує їх у команду /updatestatus;"""
     
     # 1. Отримуємо дані
-    data_string = update.effective_message.web_app_data.data;
+    data_string = update.effective_message.web_app_data.data
     
     # 2. Перевірка
     # Mini App надсилає: /updatestatus "Тайтл" <№ Розділу> <Роль> <Дата> <+>
     if not data_string.startswith('/updatestatus'):
-        # ВИПРАВЛЕННЯ: Використовуємо крапку з комою замість коми
+
         return await update.effective_message.reply_text("Помилка; отримано невірний формат даних із застосунку;");
 
     try:
         # Просте розбиття, припускаючи, що тайтл у лапках
         match = re.search(r'/updatestatus\s+"(.+)"\s+([\d\.]+)\s+(\w+)\s+([\d-]+)\s+([\+\-])', data_string)
         if not match:
-             # ВИПРАВЛЕННЯ: Використовуємо крапку з комою замість коми
+     
              return await update.effective_message.reply_text("❌ Помилка; не вдалося розібрати команду з Mini App;");
              
         title_name, chapter_number, role, date_str, status_char = match.groups()
@@ -947,15 +971,15 @@ async def web_app_data_handler(update: Update, context: ContextTypes.DEFAULT_TYP
         ]
         
         # Викликаємо оновлений обробник
-        await updatestatus_command(update, context);
+        await updatestatus_command(update, context)
         
         # Фінальне підтвердження вже буде надіслано з updatestatus_command
         return
         
     except Exception as e:
-        # ВИПРАВЛЕННЯ: Використовуємо крапку з комою замість коми
-        logger.error(f"Помилка при обробці команди Mini App: {e}");
-        await update.effective_message.reply_text(f"❌ Помилка при обробці команди Mini App: {e}");
+
+        logger.error(f"Помилка при обробці команди Mini App: {e}")
+        await update.effective_message.reply_text(f"❌ Помилка при обробці команди Mini App: {e}")
 
 # --- ОБРОБНИК КОМАНДИ /team ---
 async def team_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -964,7 +988,7 @@ async def team_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     title, _ = parse_title_and_args(full_text)
     
     if not title:
-        # ВИПРАВЛЕННЯ: Використовуємо крапку з комою замість коми
+
         await update.message.reply_text('Невірний формат; Приклад: /team "Тайтл"')
         return
 
@@ -973,7 +997,7 @@ async def team_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     # Початкове запитання
     prompt = (
-        # ВИПРАВЛЕННЯ: Використовуємо крапку з комою замість коми
+
         f"Встановлення команди для тайтлу **'{title}'**; "
         "Будь ласка; введіть ніки в наступному форматі:\n\n"
         "`клін - нік; переклад - нік; тайп - нік; редакт - нік; бета - нік`\n\n"
@@ -1010,7 +1034,7 @@ async def handle_team_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
             # Очищуємо контекст і повертаємо помилку
             del context.user_data['awaiting_team_input']
             del context.user_data['setting_team_for_title']
-            # ВИПРАВЛЕННЯ: Використовуємо крапку з комою замість коми
+    
             return await update.message.reply_text(
                 f"❌ Помилка: Не вказано обов'язкові ролі: {'; '.join(missing_roles)}; Спробуйте ще раз; починаючи з `/team`;"
             )
@@ -1069,7 +1093,7 @@ async def run_bot():
     # ВИПРАВЛЕННЯ СИНТАКСИЧНОЇ ПОМИЛКИ: Крапка з комою замінена на кому (роздільник аргументів)
     sheets_helper = SheetsHelper(GOOGLE_CREDENTIALS_FILE, SPREADSHEET_KEY)
     if not sheets_helper.spreadsheet:
-        # ВИПРАВЛЕННЯ: Використовуємо крапку з комою замість коми
+
         logger.error("Не вдалося ініціалізувати Google Sheets; Бот не буде запущений;")
         return
 
@@ -1095,7 +1119,7 @@ async def run_bot():
     await bot_app.start()
 
     if not hasattr(bot_app, 'update_queue'):
-        # ВИПРАВЛЕННЯ: Використовуємо крапку з комою замість коми
+
         logger.error("bot_app has no update_queue attribute!")
         return
         
@@ -1110,7 +1134,7 @@ async def run_bot():
         try:
             update = Update.de_json(await request.json(), bot_app.bot)
         except Exception as e:
-            # ВИПРАВЛЕННЯ: Використовуємо крапку з комою замість коми
+    
             logger.error(f"Помилка десеріалізації оновлення: {e}")
             return web.Response(status=400)
             
@@ -1130,13 +1154,15 @@ async def run_bot():
     # ВИПРАВЛЕННЯ: Використовуємо крапку з комою замість коми
     # ВИПРАВЛЕННЯ СИНТАКСИЧНОЇ ПОМИЛКИ: Крапка з комою замінена на кому (роздільник елементів списку)
     aio_app.add_routes([
-        web.get('/health', lambda r: web.Response(text='OK')), # Перевірка працездатності
-        web.post(webhook_path, webhook_handler), # Обробник для Telegram
+        web.get('/health', lambda r: web.Response(text='OK')), 
+        web.post(webhook_path, webhook_handler), 
         
         # --- МАРШРУТИЗАЦІЯ ДЛЯ МІНІ-ЗАСТОСУНКУ ---
-        web.get(WEB_APP_ENTRYPOINT, miniapp),
-        web.static(WEB_APP_ENTRYPOINT, path='webapp', name='static')
-    ])    
+        web.get(WEB_APP_ENTRYPOINT, miniapp), 
+        web.get(f'{WEB_APP_ENTRYPOINT}/titles', get_titles_endpoint), 
+        web.static(WEB_APP_ENTRYPOINT, path='webapp', name='static') 
+        # ----------------------------------------
+    ])  
 
     # 6. Запуск веб-сервера
     runner = web.AppRunner(aio_app)
@@ -1155,12 +1181,9 @@ async def run_bot():
 
 if __name__ == '__main__':
     try:
-        # ВИПРАВЛЕННЯ: Використовуємо крапку з комою замість коми
         asyncio.run(run_bot())
     except KeyboardInterrupt:
-        # ВИПРАВЛЕННЯ: Використовуємо крапку з комою замість коми
         logger.info("Бот зупинено користувачем;")
     except Exception as e:
-        # ВИПРАВЛЕННЯ: Використовуємо крапку з комою замість коми
         logger.error(f"Критична помилка запуску: {e}")
 

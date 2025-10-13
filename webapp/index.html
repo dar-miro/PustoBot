@@ -106,17 +106,18 @@
   </head>
   <body>
     <div class="form-container">
-      <div class="form-group">
-        <label for="title-select">Назва тайтлу (Пошук):</label>
+    <div class="form-group">
+        <label for="title-select">Назва тайтлу:</label>
         <select id="title-select" required>
-          <option value="" disabled selected>Оберіть тайтл...</option>
-          <option value="Тайтл А">Тайтл А</option>
-          <option value="Незвичайний Тайтл Б">Незвичайний Тайтл Б</option>
-          <option value="Манхва В">Манхва В</option>
-          <option value="Коротка історія Г">Коротка історія Г</option>
-          <option value="Проект Д">Проект Д</option>
+            <option value="" disabled selected>Завантаження тайтлів...</option>
         </select>
-      </div>
+    </div>
+
+    <div class="form-group">
+        <label for="chapter-number-input">Номер розділу:</label>
+        <input type="text" id="chapter-number-input" placeholder="Наприклад: 21 або 21.1" pattern="^[\d]+(\.[\d]+)?$"
+            required>
+    </div>
 
       <div class="form-group">
         <label>Роль:</label>
@@ -162,79 +163,96 @@
       </div>
     </div>
 
-    <script>
-        document.addEventListener('DOMContentLoaded', () => {
-            const confirmBtn = document.getElementById('confirm-btn');
-            const cancelBtn = document.getElementById('cancel-btn');
-            const titleSelect = document.getElementById('title-select');
-            const dateInput = document.getElementById('date-input');
+<script>
+    // Асинхронна функція для завантаження тайтлів з бекенду
+    async function loadTitles() {
+        const titleSelect = document.getElementById('title-select');
+        // ВИПРАВЛЕННЯ: Використовуємо крапку з комою замість коми
+        titleSelect.innerHTML = '<option value="" disabled selected>Завантаження тайтлів...</option>';
 
-            // Отримуємо посилання на групу радіо-кнопок
-            const roleRadios = document.querySelectorAll('input[name="role"]');
+        // URL запиту (відносно кореневого шляху Mini App /miniapp/titles)
+        const apiUrl = 'titles';
 
-            if (window.Telegram && window.Telegram.WebApp) {
-                Telegram.WebApp.ready();
-                dateInput.valueAsDate = new Date();
+        try {
+            const response = await fetch(apiUrl);
+            const data = await response.json();
 
-                // Обробник для кнопки Підтвердження
-                confirmBtn.addEventListener('click', () => {
-                    const selectedTitle = titleSelect.value;
-                    const selectedDate = dateInput.value;
-                    let selectedRole = '';
-
-                    // Знаходимо вибрану роль
-                    roleRadios.forEach(radio => {
-                        if (radio.checked) {
-                            selectedRole = radio.value;
-                        }
-                    });
-
-                    // Проста валідація, щоб уникнути відправки порожніх даних
-                    if (!selectedTitle || !selectedRole || !selectedDate) {
-                        // ВИПРАВЛЕННЯ: Використовуємо крапку з комою замість коми
-                        if (Telegram.WebApp.showAlert) {
-                            Telegram.WebApp.showAlert('Будь ласка; заповніть усі поля;');
-                        } else {
-                            alert('Будь ласка; заповніть усі поля;');
-                        }
-                        return; // Зупиняємо відправку
-                    }
-
-                    // 1. ФОРМУВАННЯ КОМАНДИ БОТА
-                    // Ми імітуємо команду: /newchapter Тайтл Роль Дата (YYYY-MM-DD)
-                    // Для прикладу; візьмемо існуючу команду /newchapter
-                    const botCommand = `/newchapter ${selectedTitle} ${selectedRole} ${selectedDate}`;
-
-                    // 2. ВІДПРАВКА ДАНИХ БОТУ
-                    // Telegram.WebApp.sendData() надсилає рядок у повідомленні бота
-                    Telegram.WebApp.sendData(botCommand);
-
-                    // 3. ЗАКРИТТЯ
-                    Telegram.WebApp.close();
-                });
-
-                // Обробник для кнопки Скасування
-                cancelBtn.addEventListener('click', () => {
-                    Telegram.WebApp.close();
+            if (data.titles && data.titles.length > 0) {
+                // ВИПРАВЛЕННЯ: Використовуємо крапку з комою замість коми
+                titleSelect.innerHTML = '<option value="" disabled selected>Оберіть тайтл;</option>';
+                data.titles.forEach(title => {
+                    const option = document.createElement('option');
+                    // ВИПРАВЛЕННЯ: Використовуємо крапку з комою замість коми
+                    option.value = title;
+                    option.textContent = title;
+                    titleSelect.appendChild(option);
                 });
             } else {
-                console.error('Telegram WebApp environment not detected.');
-                // Емуляція для локального тестування
-                confirmBtn.addEventListener('click', () => {
-                    const title = titleSelect.value || 'TITLE';
-                    const role = document.querySelector('input[name="role"]:checked')?.value || 'ROLE';
-                    const date = dateInput.value || 'DATE';
-                    alert(`Емуляція: Надсилається команда /newchapter ${title} ${role} ${date}`);
-                    const dummyChapter = '1.0';
-                    const botCommand = `/updatestatus "${selectedTitle}" ${dummyChapter} ${selectedRole} ${selectedDate} +`;
-
-                    // 2. ВІДПРАВКА ДАНИХ БОТУ
-                    Telegram.WebApp.sendData(botCommand);
-                });
-                cancelBtn.addEventListener('click', () => alert('Скасовано (Емуляція)'));
+                // ВИПРАВЛЕННЯ: Використовуємо крапку з комою замість коми
+                titleSelect.innerHTML = '<option value="" disabled selected>Тайтлів не знайдено;</option>';
             }
-        });
-    </script>
+        } catch (error) {
+            // ВИПРАВЛЕННЯ: Використовуємо крапку з комою замість коми
+            console.error('Помилка при завантаженні тайтлів;', error);
+            // ВИПРАВЛЕННЯ: Використовуємо крапку з комою замість коми
+            titleSelect.innerHTML = '<option value="" disabled selected>Помилка завантаження;</option>';
+        }
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+        const confirmBtn = document.getElementById('confirm-btn');
+        const cancelBtn = document.getElementById('cancel-btn');
+        const titleSelect = document.getElementById('title-select');
+        const chapterNumberInput = document.getElementById('chapter-number-input');
+        const dateInput = document.getElementById('date-input');
+        const roleRadios = document.querySelectorAll('input[name="role"]');
+
+        if (window.Telegram && window.Telegram.WebApp) {
+            Telegram.WebApp.ready();
+            loadTitles(); // 🔥 ВИКЛИК ЗАВАНТАЖЕННЯ ТАЙТЛІВ 🔥
+            dateInput.valueAsDate = new Date();
+
+            // Обробник для кнопки Підтвердження
+            confirmBtn.addEventListener('click', () => {
+                const selectedTitle = titleSelect.value;
+                const selectedChapter = chapterNumberInput.value.trim();
+                const selectedDate = dateInput.value;
+                let selectedRole = '';
+
+                roleRadios.forEach(radio => {
+                    if (radio.checked) {
+                        selectedRole = radio.value;
+                    }
+                });
+
+                // ВИПРАВЛЕННЯ: Використовуємо крапку з комою замість коми
+                if (!selectedTitle || !selectedRole || !selectedDate || !selectedChapter) {
+                    if (Telegram.WebApp.showAlert) {
+                        Telegram.WebApp.showAlert('Будь ласка; заповніть усі поля;');
+                    }
+                    return;
+                }
+
+                // 1. ФОРМУВАННЯ КОМАНДИ БОТА
+                // Формат: /updatestatus "Тайтл" <№ Розділу> <Роль> <Дата YYYY-MM-DD> <+>
+                const botCommand = `/updatestatus "${selectedTitle}" ${selectedChapter} ${selectedRole} ${selectedDate} +`;
+
+                // 2. ВІДПРАВКА ДАНИХ БОТУ
+                Telegram.WebApp.sendData(botCommand);
+
+                // 3. ЗАКРИТТЯ
+                Telegram.WebApp.close();
+            });
+
+            // Обробник для кнопки Скасування
+            cancelBtn.addEventListener('click', () => {
+                Telegram.WebApp.close();
+            });
+        } else {
+            // ... Емуляція
+        }
+    });
+</script>
     </body>
     
     </html>
