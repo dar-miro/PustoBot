@@ -249,7 +249,17 @@
                 Telegram.WebApp.close();
             });
         } else {
-            // ... Емуляція
+            console.error('Telegram WebApp environment not detected.');
+            // Емуляція для локального тестування
+            confirmBtn.addEventListener('click', () => {
+                const title = titleSelect.value || 'TITLE';
+                const chapter = chapterNumberInput.value.trim() || '1.0';
+                const role = document.querySelector('input[name="role"]:checked')?.value || 'ROLE';
+                const date = dateInput.value || 'DATE';
+                const botCommand = `/updatestatus "${title}" ${chapter} ${role} ${date} +`;
+                alert(`Емуляція: Надсилається команда ${botCommand}`);
+            });
+            cancelBtn.addEventListener('click', () => alert('Скасовано (Емуляція)'));
         }
     });
 </script>
