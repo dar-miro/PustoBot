@@ -6,16 +6,24 @@ import gspread
 import asyncio
 import os
 import sys
+import json
 from aiohttp import web
-from telegram import Update
-from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes, MessageHandler, filters
 from datetime import datetime
 import gspread.utils
+from telegram import Update, WebAppInfo, InlineKeyboardMarkup, InlineKeyboardButton
+from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes, MessageHandler, filters
 
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
 WEBHOOK_URL = os.environ.get("WEBHOOK_URL")
 GOOGLE_CREDENTIALS_FILE = os.environ.get("GOOGLE_CREDENTIALS_FILE", 'credentials.json')
 SPREADSHEET_KEY = os.environ.get("SPREADSHEET_KEY")
+
+WEB_APP_ENTRYPOINT = "/miniapp" 
+
+async def miniapp(request):
+    """Віддає головну сторінку Mini App."""
+    # Припускаємо; що файл index.html знаходиться у теці webapp
+    return web.FileResponse("webapp/index.html")
 
 # Налаштування логування
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
@@ -813,6 +821,37 @@ async def update_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
     response = sheets.update_chapter_status(title, chapter, role, status_char, nickname, telegram_tag)
     await update.message.reply_text(response)
 
+async def miniapp_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Обробляє команду /app та надсилає повідомлення з інлайн-кнопкою Mini App;"""
+    user = update.effective_user;
+    
+    # ВИПРАВЛЕННЯ: Додайте константу WEB_APP_ENTRYPOINT
+    WEB_APP_ENTRYPOINT = "/miniapp";
+    
+    # 1. Формуємо URL міні-застосунку
+    web_app_url = f"{WEBHOOK_URL.rstrip('/')}{WEB_APP_ENTRYPOINT}";
+    
+    # 2. Створюємо об'єкт WebAppInfo (тепер з telegram)
+    web_app_info = WebAppInfo(url=web_app_url);
+
+    # 3. Створюємо Інлайн-клавіатуру
+    keyboard = InlineKeyboardMarkup( # <-- ВИКОРИСТОВУЄМО InlineKeyboardMarkup
+        inline_keyboard=[
+            [
+                InlineKeyboardButton( # <-- ВИКОРИСТОВУЄМО InlineKeyboardButton
+                    text="🛠️ Заповнити звіт (Mini App)", 
+                    web_app=web_app_info # <-- передаємо WebAppInfo
+                )
+            ]
+        ]
+    );
+    
+    # ВИПРАВЛЕННЯ: Використовуємо крапку з комою замість коми
+    await update.message.reply_text(
+        "Натисніть кнопку; щоб відкрити міні-застосунок для зручного заповнення форми;",
+        reply_markup=keyboard
+    );
+
 # --- ОБРОБНИК КОМАНДИ /team ---
 async def team_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обробляє команду /team \"Назва тайтлу\" та запитує ніки для ролей;"""
@@ -1014,3 +1053,4 @@ if __name__ == '__main__':
     except Exception as e:
         # ВИПРАВЛЕННЯ: Використовуємо крапку з комою замість коми
         logger.error(f"Критична помилка запуску: {e}")
+

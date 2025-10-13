@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="uk">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Заповнення Таблиці</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <style>
+      /* Стилі для відповідності стандартному вигляду Telegram Mini App */
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+          Helvetica, Arial, sans-serif;
+        margin: 0;
+        padding: 15px;
+        background-color: var(--tg-theme-bg-color, #f4f4f5);
+        color: var(--tg-theme-text-color, #000000);
+        transition: background-color 0.3s, color 0.3s;
+      }
+
+      /* Загальні стилі для полів та форм */
+      .form-group {
+        margin-bottom: 20px;
+        padding: 10px;
+        background-color: var(--tg-theme-secondary-bg-color, #ffffff);
+        border-radius: 10px;
+      }
+
+      label {
+        display: block;
+        margin-bottom: 8px;
+        font-weight: 600;
+      }
+
+      input[type="date"],
+      select {
+        width: 100%;
+        padding: 10px;
+        box-sizing: border-box;
+        border: 1px solid var(--tg-theme-hint-color, #c8c8c8);
+        border-radius: 6px;
+        background-color: var(--tg-theme-secondary-bg-color, #ffffff);
+        color: var(--tg-theme-text-color, #000000);
+        appearance: none; /* Для стандартизації вигляду */
+        -webkit-appearance: none;
+      }
+
+      /* Стилі для радіо-кнопок (Роль) */
+      .radio-group {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        margin-top: 10px;
+      }
+      .radio-group label {
+        background-color: var(--tg-theme-button-color, #50a8eb);
+        color: var(--tg-theme-button-text-color, #ffffff);
+        padding: 8px 12px;
+        border-radius: 20px;
+        cursor: pointer;
+        transition: background-color 0.2s;
+        margin-bottom: 0;
+        font-weight: normal;
+      }
+      .radio-group input[type="radio"] {
+        display: none;
+      }
+      .radio-group input[type="radio"]:checked + label {
+        background-color: var(
+          --tg-theme-text-color,
+          #000000
+        ); /* Затемнення для вибраного стану */
+      }
+
+      /* Стилі для кнопок підтвердження/скасування */
+      .button-group {
+        display: flex;
+        justify-content: space-between;
+        gap: 10px;
+        margin-top: 25px;
+      }
+
+      .btn {
+        flex-grow: 1;
+        padding: 12px;
+        border: none;
+        border-radius: 8px;
+        cursor: pointer;
+        font-weight: 600;
+        transition: opacity 0.2s;
+      }
+
+      .btn:active {
+        opacity: 0.8;
+      }
+
+      .btn-confirm {
+        background-color: var(--tg-theme-button-color, #50a8eb);
+        color: var(--tg-theme-button-text-color, #ffffff);
+      }
+
+      .btn-cancel {
+        background-color: var(--tg-theme-hint-color, #d3d3d3);
+        color: var(--tg-theme-text-color, #000000);
+      }
+    </style>
+  </head>
+  <body>
+    <div class="form-container">
+      <div class="form-group">
+        <label for="title-select">Назва тайтлу (Пошук):</label>
+        <select id="title-select" required>
+          <option value="" disabled selected>Оберіть тайтл...</option>
+          <option value="Тайтл А">Тайтл А</option>
+          <option value="Незвичайний Тайтл Б">Незвичайний Тайтл Б</option>
+          <option value="Манхва В">Манхва В</option>
+          <option value="Коротка історія Г">Коротка історія Г</option>
+          <option value="Проект Д">Проект Д</option>
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label>Роль:</label>
+        <div class="radio-group">
+          <div>
+            <input
+              type="radio"
+              id="role-clean"
+              name="role"
+              value="Клін"
+              required
+            />
+            <label for="role-clean">Клін</label>
+          </div>
+          <div>
+            <input
+              type="radio"
+              id="role-translate"
+              name="role"
+              value="Переклад"
+            />
+            <label for="role-translate">Переклад</label>
+          </div>
+          <div>
+            <input type="radio" id="role-type" name="role" value="Тайп" />
+            <label for="role-type">Тайп</label>
+          </div>
+          <div>
+            <input type="radio" id="role-edit" name="role" value="Редакт" />
+            <label for="role-edit">Редакт</label>
+          </div>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label for="date-input">Дата:</label>
+        <input type="date" id="date-input" required />
+      </div>
+
+      <div class="button-group">
+        <button id="cancel-btn" class="btn btn-cancel">Скасувати</button>
+        <button id="confirm-btn" class="btn btn-confirm">Підтвердити</button>
+      </div>
+    </div>
+
+    <script>
+      document.addEventListener("DOMContentLoaded", () => {
+        const confirmBtn = document.getElementById("confirm-btn");
+        const cancelBtn = document.getElementById("cancel-btn");
+        const titleSelect = document.getElementById("title-select");
+        const dateInput = document.getElementById("date-input");
+
+        // Ініціалізація Telegram Web App (для доступу до функціоналу Telegram)
+        if (window.Telegram && window.Telegram.WebApp) {
+          // Встановлення кольорів інтерфейсу
+          Telegram.WebApp.ready();
+
+          // Встановлення поточної дати як значення за замовчуванням (необов'язково)
+          dateInput.valueAsDate = new Date();
+
+          // Обробник для кнопки Підтвердження
+          confirmBtn.addEventListener("click", () => {
+            // Проста валідація для демонстрації
+            if (
+              document.querySelector("form-container") &&
+              !document.querySelector("form-container").checkValidity
+            ) {
+              // В реальному застосунку тут буде складна валідація всіх полів
+              // Поки що пропускаємо, оскільки це приклад
+            }
+
+            const selectedTitle = titleSelect.value;
+            const selectedRole =
+              document.querySelector('input[name="role"]:checked')?.value ||
+              "Не вибрано";
+            const selectedDate = dateInput.value;
+
+            // Збір даних (поки що просто логуємо)
+            const formData = {
+              title: selectedTitle,
+              role: selectedRole,
+              date: selectedDate,
+            };
+            console.log("Дані для відправки:", formData);
+
+            // Відправка повідомлення в чат і закриття Mini App
+            // Дані (formData) можуть бути відправлені як рядок (наприклад, JSON) через WebApp.sendData()
+            Telegram.WebApp.sendData(
+              JSON.stringify({ status: "success", data: formData })
+            );
+            // Зазвичай WebApp.sendData() виконує роль закриття та відправки.
+            // Виклик .close() можна використовувати окремо.
+            Telegram.WebApp.close();
+          });
+
+          // Обробник для кнопки Скасування
+          cancelBtn.addEventListener("click", () => {
+            // Можна надіслати повідомлення про скасування, або просто закрити.
+            // Тут просто закриваємо.
+            Telegram.WebApp.close();
+          });
+        } else {
+          console.error("Telegram WebApp environment not detected.");
+          // Емуляція роботи кнопок для локального тестування
+          confirmBtn.addEventListener("click", () =>
+            alert("Підтверджено: (Емуляція) Успішно!")
+          );
+          cancelBtn.addEventListener("click", () =>
+            alert("Скасовано (Емуляція)")
+          );
+        }
+      });
+    </script>
+  </body>
+</html>
