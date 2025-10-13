@@ -172,7 +172,7 @@
 
             // 🔥 ВИПРАВЛЕННЯ 🔥: Використовуємо відносний шлях до статичного файлу titles.json
             // На /miniapp сторінці це посилання є коректним
-            const apiUrl = 'titles;json';
+            const apiUrl = 'titles.json';
 
             try {
                 // ВИПРАВЛЕННЯ: Використовуємо крапку з комою замість коми
@@ -208,7 +208,7 @@
                 titleSelect.innerHTML = '<option value="" disabled selected>Помилка завантаження (Перевірте titles;json);</option>';
             }
         }
-        
+
     document.addEventListener('DOMContentLoaded', () => {
         const confirmBtn = document.getElementById('confirm-btn');
         const cancelBtn = document.getElementById('cancel-btn');
