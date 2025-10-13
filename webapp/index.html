@@ -165,39 +165,44 @@
 
 <script>
     // Асинхронна функція для завантаження тайтлів з бекенду
-    async function loadTitles() {
-        const titleSelect = document.getElementById('title-select');
-        // ВИПРАВЛЕННЯ: Використовуємо крапку з комою замість коми
-        titleSelect.innerHTML = '<option value="" disabled selected>Завантаження тайтлів...</option>';
+     async function loadTitles() {
+            const titleSelect = document.getElementById('title-select');
+            // ВИПРАВЛЕННЯ: Використовуємо крапку з комою замість коми
+            titleSelect.innerHTML = '<option value="" disabled selected>Завантаження тайтлів...</option>';
 
-        // URL запиту (відносно кореневого шляху Mini App /miniapp/titles)
-        const apiUrl = 'titles';
+            // 🔥 ВИПРАВЛЕННЯ 🔥: Використовуємо абсолютний шлях /miniapp/titles 
+            const apiUrl = '/miniapp/titles';
 
-        try {
-            const response = await fetch(apiUrl);
-            const data = await response.json();
+            try {
+                const response = await fetch(apiUrl);
+                // ВИПРАВЛЕННЯ: Додаємо перевірку, чи відповідь успішна (код 200-299)
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
 
-            if (data.titles && data.titles.length > 0) {
-                // ВИПРАВЛЕННЯ: Використовуємо крапку з комою замість коми
-                titleSelect.innerHTML = '<option value="" disabled selected>Оберіть тайтл;</option>';
-                data.titles.forEach(title => {
-                    const option = document.createElement('option');
+                const data = await response.json();
+
+                if (data.titles && data.titles.length > 0) {
                     // ВИПРАВЛЕННЯ: Використовуємо крапку з комою замість коми
-                    option.value = title;
-                    option.textContent = title;
-                    titleSelect.appendChild(option);
-                });
-            } else {
+                    titleSelect.innerHTML = '<option value="" disabled selected>Оберіть тайтл;</option>';
+                    data.titles.forEach(title => {
+                        const option = document.createElement('option');
+                        // ВИПРАВЛЕННЯ: Використовуємо крапку з комою замість коми
+                        option.value = title;
+                        option.textContent = title;
+                        titleSelect.appendChild(option);
+                    });
+                } else {
+                    // ВИПРАВЛЕННЯ: Використовуємо крапку з комою замість коми
+                    titleSelect.innerHTML = '<option value="" disabled selected>Тайтлів не знайдено;</option>';
+                }
+            } catch (error) {
                 // ВИПРАВЛЕННЯ: Використовуємо крапку з комою замість коми
-                titleSelect.innerHTML = '<option value="" disabled selected>Тайтлів не знайдено;</option>';
+                console.error('Помилка при завантаженні тайтлів;', error);
+                // ВИПРАВЛЕННЯ: Використовуємо крапку з комою замість коми
+                titleSelect.innerHTML = '<option value="" disabled selected>Помилка завантаження (Сервер не відповідає на /miniapp/titles);</option>';
             }
-        } catch (error) {
-            // ВИПРАВЛЕННЯ: Використовуємо крапку з комою замість коми
-            console.error('Помилка при завантаженні тайтлів;', error);
-            // ВИПРАВЛЕННЯ: Використовуємо крапку з комою замість коми
-            titleSelect.innerHTML = '<option value="" disabled selected>Помилка завантаження;</option>';
         }
-    }
 
     document.addEventListener('DOMContentLoaded', () => {
         const confirmBtn = document.getElementById('confirm-btn');
