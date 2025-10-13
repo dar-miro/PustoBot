@@ -980,6 +980,7 @@ async def run_bot():
     bot_app.add_handler(CommandHandler("newchapter", new_chapter))
     bot_app.add_handler(CommandHandler("status", status))
     bot_app.add_handler(CommandHandler("updatestatus", update_status))
+    bot_app.add_handler(CommandHandler("app", miniapp_command))
     
     # Обробник для відповіді на команду /team
     bot_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_team_input))
@@ -1026,7 +1027,11 @@ async def run_bot():
     aio_app.add_routes([
         web.get('/health', lambda r: web.Response(text='OK')), # Перевірка працездатності
         web.post(webhook_path, webhook_handler), # Обробник для Telegram
-    ])
+        
+        # --- МАРШРУТИЗАЦІЯ ДЛЯ МІНІ-ЗАСТОСУНКУ ---
+        web.get(WEB_APP_ENTRYPOINT, miniapp),
+        web.static(WEB_APP_ENTRYPOINT, path='webapp', name='static')
+    ])    
 
     # 6. Запуск веб-сервера
     runner = web.AppRunner(aio_app)
