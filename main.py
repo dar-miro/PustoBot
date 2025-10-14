@@ -152,6 +152,73 @@ class SheetsHelper:
         else:
             logger.warning("Аркуш 'Журнал' не ініціалізовано; логування пропущено;")
 
+    def update_chapter_status(self, title_name, chapter_number, role_key, date, status_symbol, nickname, telegram_tag):
+        """Оновлює статус глави для певної ролі;"""
+        if not self.spreadsheet: raise ConnectionError("Немає підключення до Google Sheets;")
+
+        # 1. Знаходимо робочий аркуш
+        try:
+            worksheet = self.spreadsheet.worksheet(title_name)
+        except gspread.WorksheetNotFound:
+            return f"❌ Помилка: Тайтл '{title_name}' не знайдено в таблиці;"
+        
+        # 2. Знаходимо рядок розділу
+        try:
+            # col_values(1) — це колонка 'Розділ'
+            chapters = worksheet.col_values(1) 
+            # Рядок 1, 2, 3 зазвичай зарезервовані для заголовків; шукаємо починаючи з 4
+            if str(chapter_number) not in chapters[3:]: 
+                return f"❌ Помилка: Розділ {chapter_number} не знайдено; Створіть його спочатку;"
+
+            # Індекс у gspread (1-based) = Індекс у списку (0-based) + 1
+            # +1, тому що col_values повертає список з першого ряду
+            row_index = chapters.index(str(chapter_number)) + 1
+        except Exception as e:
+            logger.error(f"Помилка при пошуку розділу {chapter_number}: {e}");
+            return f"❌ Помилка при пошуку розділу {chapter_number};"
+        
+        # 3. Визначаємо колонки для оновлення
+        role_base = ROLE_TO_COLUMN_BASE.get(role_key) # ROLE_TO_COLUMN_BASE має бути оголошено раніше
+        if not role_base:
+            return f"❌ Помилка: Невідома роль: {role_key};"
+
+        # Визначаємо заголовки для даного аркуша (щоб знайти індекси колонок)
+        headers = worksheet.row_values(3) # Заголовки у 3-му рядку
+        
+        # Формуємо назви колонок для пошуку індексів
+        col_name_nick = f'{role_base}-Нік'
+        col_name_date = f'{role_base}-Дата'
+        col_name_status = f'{role_base}-Статус'
+
+        try:
+            # Знаходимо індекси колонок (Python index + 1 для gspread)
+            col_index_nick = headers.index(col_name_nick) + 1
+            col_index_date = headers.index(col_name_date) + 1
+            col_index_status = headers.index(col_name_status) + 1
+
+        except ValueError:
+            return f"❌ Помилка: Аркуш '{title_name}' не містить потрібних заголовків для ролі '{role_base}';"
+
+        # 4. Оновлення даних (пакетне оновлення)
+        updates = []
+        updates.append({'range': gspread.utils.rowcol_to_a1(row_index, col_index_nick), 'values': [[nickname]]})
+        updates.append({'range': gspread.utils.rowcol_to_a1(row_index, col_index_date), 'values': [[date]]})
+        updates.append({'range': gspread.utils.rowcol_to_a1(row_index, col_index_status), 'values': [[status_symbol]]})
+        
+        worksheet.batch_update(updates)
+        
+        # 5. Логування дії
+        self._log_action(
+            telegram_tag=telegram_tag,
+            nickname=nickname,
+            title=title_name,
+            chapter=chapter_number,
+            role=role_base
+        )
+        
+ 
+        return f"✅ Статус оновлено: {title_name} - Розділ {chapter_number} ({role_base}) встановлено на {status_symbol} ({nickname});"
+
     def get_nickname_by_id(self, user_id):
         """Отримує зареєстрований Нік користувача за його Telegram-ID;"""
         if not self.users_sheet: 
@@ -896,6 +963,75 @@ async def update_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
     response = sheets.update_chapter_status(title, chapter, role, status_char, nickname, telegram_tag)
     await update.message.reply_text(response)
 
+UPDATE_STATUS_PATTERN = re.compile(r'/updatestatus \"(.+?)\"\s+([\d\.]+)\s+(клін|переклад|тайп|ред)\s+([\d]{4}-[\d]{2}-[\d]{2})\s+\+')
+
+
+async def web_app_data_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Обробляє дані, надіслані з Mini App через sendData();"""
+    # ВИПРАВЛЕННЯ: Використовуємо крапку з комою замість коми
+    user = update.effective_user
+    # Дані (botCommand) знаходяться у полі web_app_data
+    data = update.effective_message.web_app_data.data; 
+    
+    # ВИПРАВЛЕННЯ: Використовуємо крапку з комою замість коми
+    logger.info(f"Отримано дані Mini App від {user.username} ({user.id}): {data}")
+
+    # 1. Парсимо дані
+    match = UPDATE_STATUS_PATTERN.match(data)
+    
+    if match:
+        # 2. Якщо парсинг успішний; викликаємо основну функцію обробки статусу
+        # Передаємо об'єкт Update та Context; а також розпарсені аргументи
+        await update_status_command(update, context, match.groups())
+    else:
+ 
+        error_message = f"❌ Помилка парсингу команди Mini App; Перевірте формат; Отримано: `{data}`"
+ 
+        await update.effective_message.reply_text(error_message)
+ 
+        logger.warning(f"Помилка парсингу Mini App: {data}")
+        
+async def update_status_command(update: Update, context: ContextTypes.DEFAULT_TYPE, args: tuple) -> None:
+    """Виконує логіку оновлення статусу в Google Sheets;"""
+    
+    # Аргументи вже розпарсено з web_app_data_handler
+    title, chapter, role_key, date, status = args
+
+    # 1. Валідація та підготовка даних
+    user = update.effective_user
+    sheets_helper = context.application.bot_app.data.get('sheets_helper')
+
+    if not sheets_helper:
+ 
+        await update.effective_message.reply_text("❌ Помилка: Сервіс Google Sheets недоступний;")
+        return
+
+    # Отримання нікнейма (важливо для запису в таблицю)
+    # ВИПРАВЛЕННЯ: Використовуємо крапку з комою замість коми
+    nickname = sheets_helper.get_nickname_by_id(user.id)
+    if not nickname:
+        await update.effective_message.reply_text(f"❌ Помилка: Ваш Telegram ID ({user.id}) не зареєстровано; Використовуйте /register;");
+        return
+        
+    # 2. Виконання оновлення таблиці
+    try:
+        result_message = sheets_helper.update_chapter_status(
+            title_name=title,
+            chapter_number=chapter,
+            role_key=role_key,
+            date=date,
+            status_symbol=status, 
+            nickname=nickname,
+            telegram_tag=f"@{user.username}" if user.username else str(user.id)
+        )
+ 
+        await update.effective_message.reply_text(result_message)
+    except Exception as e:
+ 
+        logger.error(f"Помилка при оновленні статусу: {e}")
+ 
+        await update.effective_message.reply_text(f"❌ Помилка при оновленні статусу в таблиці; {e}")
+
 async def miniapp_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обробляє команду /app та надсилає повідомлення з інлайн-кнопкою Mini App;"""
     user = update.effective_user
@@ -1099,6 +1235,14 @@ async def run_bot():
     
     # Обробник для відповіді на команду /team
     bot_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_team_input))
+    bot_app.add_handler(
+        MessageHandler(
+            filters.TEXT 
+            & ~filters.COMMAND 
+            & filters.UpdateType.WEB_APP_DATA, # Фільтр для даних Mini App
+            web_app_data_handler
+        )
+    )
 
  # запуск бота для вебхуків
     await bot_app.initialize()
