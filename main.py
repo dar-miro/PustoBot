@@ -180,7 +180,7 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     """Обробляє команду /start."""
     user = update.effective_user
     
-    # Доступ до sheets_helper у обробниках (коректно для PTB v20+)
+    # Доступ до sheets_helper
     sheets_helper = context.application.data.get('sheets_helper')
     nickname = sheets_helper.get_nickname_by_id(user.id) if sheets_helper else None
     
@@ -229,7 +229,7 @@ async def update_status_command(update: Update, context: ContextTypes.DEFAULT_TY
     title, chapter, role_key, date, status = args
 
     user = update.effective_user
-    # Доступ до sheets_helper у обробниках (коректно для PTB v20+)
+    # Доступ до sheets_helper
     sheets_helper = context.application.data.get('sheets_helper')
 
     if not sheets_helper:
@@ -270,8 +270,10 @@ async def run_bot():
     sheets_helper = SheetsHelper(SPREADSHEET_KEY)
 
     # 2. Створення застосунку Telegram
-    # ✅ ВИПРАВЛЕННЯ: Ініціалізація даних через .application_data() для уникнення помилки 'has no attribute data'
-    bot_app = ApplicationBuilder().token(TELEGRAM_BOT_TOKEN).application_data({'sheets_helper': sheets_helper}).build()
+    # ✅ ВИПРАВЛЕННЯ: Використовуємо .build().application.data для сумісності з різними версіями PTB
+    bot_app = ApplicationBuilder().token(TELEGRAM_BOT_TOKEN).build()
+    # Присвоюємо дані після .build() (найбільш універсальний спосіб)
+    bot_app.application.data['sheets_helper'] = sheets_helper 
     
     # 3. Налаштування webhook
     parsed_url = web.URL(WEBHOOK_URL)
