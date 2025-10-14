@@ -34,7 +34,6 @@ ROLE_TO_COLUMN_BASE = {
 PUBLISH_COLUMN_BASE = "Публікація"
 
 # Шаблон для парсингу команди /updatestatus "Тайтл" <№ Розділу> <Роль> <Дата YYYY-MM-DD> <+>
-# Групи: 1: Тайтл (в лапках); 2: Номер розділу; 3: Роль (клін|переклад|тайп|ред); 4: Дата; 5: Статус (+)
 UPDATE_STATUS_PATTERN = re.compile(r'/updatestatus \"(.+?)\"\s+([\d\.]+)\s+(клін|переклад|тайп|ред)\s+([\d]{4}-[\d]{2}-[\d]{2})\s+\+')
 
 # ==============================================================================
@@ -81,10 +80,11 @@ class SheetsHelper:
             self.spreadsheet = None
 
     def _load_users_cache(self):
-        """Завантажує ID користувачів та їхні нікнейми з аркуша USERS."""
+        """Завантажує ID користувачів та їхні нікнейми з аркуша Користувачі."""
         if not self.spreadsheet: return
         try:
-            users_ws = self.spreadsheet.worksheet("USERS")
+            # 🔥 ВИПРАВЛЕННЯ 1: Змінено 'USERS' на 'Користувачі'
+            users_ws = self.spreadsheet.worksheet("Користувачі")
             records = users_ws.get_all_records()
             self.users_cache = {
                 int(record['Telegram ID']): record['Нік']
@@ -92,13 +92,12 @@ class SheetsHelper:
             }
             logger.info(f"Завантажено {len(self.users_cache)} користувачів у кеш.")
         except gspread.WorksheetNotFound:
-            logger.error("Аркуш 'USERS' не знайдено. Реєстрація користувачів неможлива.")
+            logger.error("Аркуш 'Користувачі' не знайдено. Реєстрація користувачів неможлива.")
         except Exception as e:
             logger.error(f"Помилка завантаження кешу користувачів: {e}")
 
     def get_nickname_by_id(self, user_id: int) -> str | None:
         """Повертає нікнейм за ID користувача."""
-        # Для простоти використовуємо кеш
         return self.users_cache.get(user_id)
     
     def _log_action(self, telegram_tag, nickname, title, chapter, role):
@@ -181,8 +180,8 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     """Обробляє команду /start."""
     user = update.effective_user
     
-    # Перевірка реєстрації (потрібно для Mini App)
-    sheets_helper = context.application.bot_app.data.get('sheets_helper')
+    # 🔥 ВИПРАВЛЕННЯ 2: Коректне отримання sheets_helper з context.application.data
+    sheets_helper = context.application.data.get('sheets_helper')
     nickname = sheets_helper.get_nickname_by_id(user.id) if sheets_helper else None
     
     if not nickname:
@@ -215,11 +214,9 @@ async def web_app_data_handler(update: Update, context: ContextTypes.DEFAULT_TYP
     
     logger.info(f"Отримано дані Mini App від {user.username} ({user.id}): {data}")
 
-    # 1. Парсимо дані
     match = UPDATE_STATUS_PATTERN.match(data)
     
     if match:
-        # 2. Якщо парсинг успішний, викликаємо основну функцію обробки статусу
         await update_status_command(update, context, match.groups())
     else:
         error_message = f"❌ Помилка парсингу команди Mini App. Перевірте формат. Отримано: `{data}`"
@@ -229,11 +226,11 @@ async def web_app_data_handler(update: Update, context: ContextTypes.DEFAULT_TYP
 async def update_status_command(update: Update, context: ContextTypes.DEFAULT_TYPE, args: Tuple[str, str, str, str, str]) -> None:
     """Виконує логіку оновлення статусу в Google Sheets."""
     
-    # Аргументи вже розпарсено: (title, chapter, role_key, date, status)
     title, chapter, role_key, date, status = args
 
     user = update.effective_user
-    sheets_helper = context.application.bot_app.data.get('sheets_helper')
+    # 🔥 ВИПРАВЛЕННЯ 2: Коректне отримання sheets_helper з context.application.data
+    sheets_helper = context.application.data.get('sheets_helper')
 
     if not sheets_helper:
         await update.effective_message.reply_text("❌ Помилка: Сервіс Google Sheets недоступний.")
@@ -259,7 +256,7 @@ async def update_status_command(update: Update, context: ContextTypes.DEFAULT_TY
         logger.error(f"Помилка при оновленні статусу: {e}")
         await update.effective_message.reply_text(f"❌ Помилка при оновленні статусу в таблиці: {e}")
 
-# ... (Інші команди, наприклад, register_command, не потрібні для цього запиту)
+# ... (Інші команди)
 # ...
 
 # ==============================================================================
@@ -277,7 +274,8 @@ async def run_bot():
 
     # 2. Створення застосунку Telegram
     bot_app = ApplicationBuilder().token(TELEGRAM_BOT_TOKEN).build()
-    bot_app.bot_app.data['sheets_helper'] = sheets_helper # Зберігаємо в контексті
+    # 🔥 ВИПРАВЛЕННЯ 2: Збереження sheets_helper напряму в контекст Application
+    bot_app.data['sheets_helper'] = sheets_helper 
 
     # 3. Налаштування webhook
     parsed_url = web.URL(WEBHOOK_URL)
@@ -290,12 +288,11 @@ async def run_bot():
     # 4. Налаштування обробників
     bot_app.add_handler(CommandHandler("start", start_command))
     
-    # 🔥 РЕЄСТРАЦІЯ ОБРОБНИКА ДЛЯ ДАНИХ MINI APP 🔥
     bot_app.add_handler(
         MessageHandler(
             filters.TEXT 
             & ~filters.COMMAND 
-            & filters.UpdateType.WEB_APP_DATA, # Фільтр для даних Mini App
+            & filters.UpdateType.WEB_APP_DATA, 
             web_app_data_handler
         )
     )
