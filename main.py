@@ -83,7 +83,7 @@ class SheetsHelper:
         """Завантажує ID користувачів та їхні нікнейми з аркуша Користувачі."""
         if not self.spreadsheet: return
         try:
-            # 🔥 ВИПРАВЛЕННЯ 1: Змінено 'USERS' на 'Користувачі'
+            # ✅ Виправлення: Використання аркуша "Користувачі"
             users_ws = self.spreadsheet.worksheet("Користувачі")
             records = users_ws.get_all_records()
             self.users_cache = {
@@ -180,7 +180,7 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     """Обробляє команду /start."""
     user = update.effective_user
     
-    # 🔥 ВИПРАВЛЕННЯ 2: Коректне отримання sheets_helper з context.application.data
+    # Доступ до sheets_helper у обробниках (коректно для PTB v20+)
     sheets_helper = context.application.data.get('sheets_helper')
     nickname = sheets_helper.get_nickname_by_id(user.id) if sheets_helper else None
     
@@ -229,7 +229,7 @@ async def update_status_command(update: Update, context: ContextTypes.DEFAULT_TY
     title, chapter, role_key, date, status = args
 
     user = update.effective_user
-    # 🔥 ВИПРАВЛЕННЯ 2: Коректне отримання sheets_helper з context.application.data
+    # Доступ до sheets_helper у обробниках (коректно для PTB v20+)
     sheets_helper = context.application.data.get('sheets_helper')
 
     if not sheets_helper:
@@ -256,9 +256,6 @@ async def update_status_command(update: Update, context: ContextTypes.DEFAULT_TY
         logger.error(f"Помилка при оновленні статусу: {e}")
         await update.effective_message.reply_text(f"❌ Помилка при оновленні статусу в таблиці: {e}")
 
-# ... (Інші команди)
-# ...
-
 # ==============================================================================
 # ЗАПУСК БОТА
 # ==============================================================================
@@ -273,10 +270,9 @@ async def run_bot():
     sheets_helper = SheetsHelper(SPREADSHEET_KEY)
 
     # 2. Створення застосунку Telegram
-    bot_app = ApplicationBuilder().token(TELEGRAM_BOT_TOKEN).build()
-    # 🔥 ВИПРАВЛЕННЯ 2: Збереження sheets_helper напряму в контекст Application
-    bot_app.data['sheets_helper'] = sheets_helper 
-
+    # ✅ ВИПРАВЛЕННЯ: Ініціалізація даних через .application_data() для уникнення помилки 'has no attribute data'
+    bot_app = ApplicationBuilder().token(TELEGRAM_BOT_TOKEN).application_data({'sheets_helper': sheets_helper}).build()
+    
     # 3. Налаштування webhook
     parsed_url = web.URL(WEBHOOK_URL)
     webhook_path = parsed_url.path
