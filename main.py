@@ -33,7 +33,7 @@ ROLE_TO_COLUMN_BASE = {
 }
 PUBLISH_COLUMN_BASE = "Публікація"
 
-# Шаблон для парсингу команди /updatestatus "Тайтл" <№ Розділу> <Роль> <Дата YYYY-MM-DD> <+>
+# Шаблон для парсингу команди (Залишаємо для legacy/діагностики, але не використовуємо)
 UPDATE_STATUS_PATTERN = re.compile(r'/updatestatus \"(.+?)\"\s+([\d\.]+)\s+(клін|переклад|тайп|ред)\s+([\d]{4}-[\d]{2}-[\d]{2})\s+\+')
 
 # ==============================================================================
@@ -42,13 +42,20 @@ UPDATE_STATUS_PATTERN = re.compile(r'/updatestatus \"(.+?)\"\s+([\d\.]+)\s+(кл
 
 async def miniapp(request: web.Request):
     """Віддає головну сторінку Mini App."""
+    # Припускаємо, що файл index.html знаходиться у теці webapp
     return web.FileResponse("webapp/index.html")
 
 async def webhook_handler(request: web.Request):
     """Обробляє вхідні запити webhook від Telegram."""
-    update = Update.de_json(await request.json(), request.app['bot_app'].bot)
-    asyncio.create_task(request.app['bot_app'].process_update(update))
-    return web.Response()
+    try:
+        update = Update.de_json(await request.json(), request.app['bot_app'].bot)
+        # Process update в окремій задачі для негайного повернення відповіді HTTP
+        asyncio.create_task(request.app['bot_app'].process_update(update))
+        return web.Response(status=200)
+    except Exception as e:
+        logger.error(f"Помилка в обробнику вебхука: {e}")
+        return web.Response(status=500)
+
 
 # ==============================================================================
 # GOOGLE SHEETS HELPER
@@ -83,7 +90,6 @@ class SheetsHelper:
         """Завантажує ID користувачів та їхні нікнейми з аркуша Користувачі."""
         if not self.spreadsheet: return
         try:
-            # ✅ Виправлення: Використання аркуша "Користувачі"
             users_ws = self.spreadsheet.worksheet("Користувачі")
             records = users_ws.get_all_records()
             self.users_cache = {
@@ -180,7 +186,6 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     """Обробляє команду /start."""
     user = update.effective_user
     
-    # Доступ до sheets_helper
     sheets_helper = context.application.data.get('sheets_helper')
     nickname = sheets_helper.get_nickname_by_id(user.id) if sheets_helper else None
     
@@ -208,20 +213,53 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     )
 
 async def web_app_data_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Обробляє дані, надіслані з Mini App через sendData()."""
+    """
+    ОБРОБКА JSON-ДАНИХ, надісланих з Mini App.
+    """
     user = update.effective_user
-    data = update.effective_message.web_app_data.data 
+    data_str = update.effective_message.web_app_data.data 
     
-    logger.info(f"Отримано дані Mini App від {user.username} ({user.id}): {data}")
+    logger.info(f"Отримано дані Mini App від {user.username} ({user.id}): {data_str}")
 
-    match = UPDATE_STATUS_PATTERN.match(data)
-    
-    if match:
-        await update_status_command(update, context, match.groups())
-    else:
-        error_message = f"❌ Помилка парсингу команди Mini App. Перевірте формат. Отримано: `{data}`"
+    try:
+        data_json = json.loads(data_str)
+        
+        # 1. ПЕРЕВІРКА ДІЇ
+        action = data_json.get('action')
+        if action == 'update_status':
+            
+            # 2. ПЕРЕВІРКА НЕОБХІДНИХ ПОЛІВ
+            required_keys = ['title', 'chapter', 'role', 'date', 'status']
+            if not all(k in data_json for k in required_keys):
+                error_message = f"❌ Помилка: JSON-запит на оновлення статусу неповний. Необхідні поля: {required_keys}"
+                await update.effective_message.reply_text(error_message)
+                return
+
+            # 3. ВИКЛИК ОСНОВНОЇ ЛОГІКИ
+            args = (
+                data_json['title'],
+                data_json['chapter'],
+                data_json['role'],
+                data_json['date'],
+                data_json['status']
+            )
+            await update_status_command(update, context, args)
+
+        else:
+            # Обробка невідомої дії або інших JSON-запитів
+            await update.effective_message.reply_text(f"❓ Невідома дія в JSON-запиті: {action}. Отримано: `{data_str}`")
+
+    except json.JSONDecodeError:
+        # 4. FALLBACK: СПРОБА ПАРСИНГУ ЯК СТАРОЇ КОМАНДИ (якщо це не JSON)
+        match = UPDATE_STATUS_PATTERN.match(data_str)
+        if match:
+            await update_status_command(update, context, match.groups())
+            return # Успішно оброблено як команду
+
+        # Якщо не вдалося ні JSON, ні команда
+        error_message = f"❌ Помилка: Отримано невалідний формат даних з Mini App. Очікувався JSON. Отримано: `{data_str}`"
         await update.effective_message.reply_text(error_message)
-        logger.warning(f"Помилка парсингу Mini App: {data}")
+        logger.warning(f"Помилка парсингу Mini App: {data_str}")
         
 async def update_status_command(update: Update, context: ContextTypes.DEFAULT_TYPE, args: Tuple[str, str, str, str, str]) -> None:
     """Виконує логіку оновлення статусу в Google Sheets."""
@@ -229,7 +267,6 @@ async def update_status_command(update: Update, context: ContextTypes.DEFAULT_TY
     title, chapter, role_key, date, status = args
 
     user = update.effective_user
-    # Доступ до sheets_helper
     sheets_helper = context.application.data.get('sheets_helper')
 
     if not sheets_helper:
@@ -270,10 +307,10 @@ async def run_bot():
     sheets_helper = SheetsHelper(SPREADSHEET_KEY)
 
     # 2. Створення застосунку Telegram
-    # ✅ ВИПРАВЛЕННЯ: Використовуємо .build().application.data для сумісності з різними версіями PTB
     bot_app = ApplicationBuilder().token(TELEGRAM_BOT_TOKEN).build()
-    # Присвоюємо дані після .build() (найбільш універсальний спосіб)
-    bot_app.application.data['sheets_helper'] = sheets_helper 
+    
+    # Пряме присвоєння до .data
+    bot_app.data['sheets_helper'] = sheets_helper 
     
     # 3. Налаштування webhook
     parsed_url = web.URL(WEBHOOK_URL)

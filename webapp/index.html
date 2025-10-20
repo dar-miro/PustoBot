@@ -1,272 +1,281 @@
 <!DOCTYPE html>
 <html lang="uk">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Заповнення Таблиці</title>
-    <script src="https://telegram.org/js/telegram-web-app.js"></script>
-    <style>
-      /* Стилі для відповідності стандартному вигляду Telegram Mini App */
-      body {
-        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
-          Helvetica, Arial, sans-serif;
-        margin: 0;
-        padding: 15px;
-        background-color: var(--tg-theme-bg-color, #f4f4f5);
-        color: var(--tg-theme-text-color, #000000);
-        transition: background-color 0.3s, color 0.3s;
-      }
 
-      /* Загальні стилі для полів та форм */
-      .form-group {
-        margin-bottom: 20px;
-        padding: 10px;
-        background-color: var(--tg-theme-secondary-bg-color, #ffffff);
-        border-radius: 10px;
-      }
-
-      label {
-        display: block;
-        margin-bottom: 8px;
-        font-weight: 600;
-      }
-
-      input[type="date"],
-      select {
-        width: 100%;
-        padding: 10px;
-        box-sizing: border-box;
-        border: 1px solid var(--tg-theme-hint-color, #c8c8c8);
-        border-radius: 6px;
-        background-color: var(--tg-theme-secondary-bg-color, #ffffff);
-        color: var(--tg-theme-text-color, #000000);
-        appearance: none; /* Для стандартизації вигляду */
-        -webkit-appearance: none;
-      }
-
-      /* Стилі для радіо-кнопок (Роль) */
-      .radio-group {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 10px;
-        margin-top: 10px;
-      }
-      .radio-group label {
-        background-color: var(--tg-theme-button-color, #50a8eb);
-        color: var(--tg-theme-button-text-color, #ffffff);
-        padding: 8px 12px;
-        border-radius: 20px;
-        cursor: pointer;
-        transition: background-color 0.2s;
-        margin-bottom: 0;
-        font-weight: normal;
-      }
-      .radio-group input[type="radio"] {
-        display: none;
-      }
-      .radio-group input[type="radio"]:checked + label {
-        background-color: var(
-          --tg-theme-text-color,
-          #000000
-        ); /* Затемнення для вибраного стану */
-      }
-
-      /* Стилі для кнопок підтвердження/скасування */
-      .button-group {
-        display: flex;
-        justify-content: space-between;
-        gap: 10px;
-        margin-top: 25px;
-      }
-
-      .btn {
-        flex-grow: 1;
-        padding: 12px;
-        border: none;
-        border-radius: 8px;
-        cursor: pointer;
-        font-weight: 600;
-        transition: opacity 0.2s;
-      }
-
-      .btn:active {
-        opacity: 0.8;
-      }
-
-      .btn-confirm {
-        background-color: var(--tg-theme-button-color, #50a8eb);
-        color: var(--tg-theme-button-text-color, #ffffff);
-      }
-
-      .btn-cancel {
-        background-color: var(--tg-theme-hint-color, #d3d3d3);
-        color: var(--tg-theme-text-color, #000000);
-      }
-    </style>
-  </head>
-  <body>
-    <div class="form-container">
-    <div class="form-group">
-        <label for="title-select">Назва тайтлу:</label>
-        <select id="title-select" required>
-            <option value="" disabled selected>Завантаження тайтлів...</option>
-        </select>
-    </div>
-
-    <div class="form-group">
-        <label for="chapter-number-input">Номер розділу:</label>
-        <input type="text" id="chapter-number-input" placeholder="Наприклад: 21 або 21.1" pattern="^[\d]+(\.[\d]+)?$"
-            required>
-    </div>
-
-      <div class="form-group">
-        <label>Роль:</label>
-        <div class="radio-group">
-          <div>
-            <input
-              type="radio"
-              id="role-clean"
-              name="role"
-              value="Клін"
-              required
-            />
-            <label for="role-clean">Клін</label>
-          </div>
-          <div>
-            <input
-              type="radio"
-              id="role-translate"
-              name="role"
-              value="Переклад"
-            />
-            <label for="role-translate">Переклад</label>
-          </div>
-          <div>
-            <input type="radio" id="role-type" name="role" value="Тайп" />
-            <label for="role-type">Тайп</label>
-          </div>
-          <div>
-            <input type="radio" id="role-edit" name="role" value="Редакт" />
-            <label for="role-edit">Редакт</label>
-          </div>
-        </div>
-      </div>
-
-      <div class="form-group">
-        <label for="date-input">Дата:</label>
-        <input type="date" id="date-input" required />
-      </div>
-
-      <div class="button-group">
-        <button id="cancel-btn" class="btn btn-cancel">Скасувати</button>
-        <button id="confirm-btn" class="btn btn-confirm">Підтвердити</button>
-      </div>
-    </div>
-
-<script>
-  document.addEventListener('DOMContentLoaded', () => {
-    const titleSelect = document.getElementById('title-select');
-    const chapterNumberInput = document.getElementById('chapter-number-input');
-    const dateInput = document.getElementById('date-input');
-    const confirmBtn = document.getElementById('confirm-btn');
-    const cancelBtn = document.getElementById('cancel-btn');
-    const statusDiv = document.getElementById('status');
-
-    // Встановлення поточної дати за замовчуванням
-    const today = new Date().toISOString().split('T')[0];
-    dateInput.value = today;
-
-    async function loadTitles() {
-      try {
-        // Використовуємо абсолютний шлях до файлу titles.json
-        const apiUrl = '/miniapp/titles.json';
-        const response = await fetch(apiUrl);
-
-        if (!response.ok) {
-          throw new Error('Помилка HTTP: ' + response.status);
-        }
-
-        const data = await response.json();
-
-        if (data && Array.isArray(data.titles)) {
-          data.titles.forEach(title => {
-            const option = document.createElement('option');
-            option.value = title;
-            option.textContent = title;
-            titleSelect.appendChild(option);
-          });
-        } else {
-          statusDiv.textContent = 'Помилка: Невірний формат даних у titles.json.';
-          Telegram.WebApp.showAlert('Помилка: Невірний формат тайтлів.');
-        }
-      } catch (error) {
-        console.error('Помилка завантаження тайтлів:', error);
-        statusDiv.textContent = 'Помилка завантаження (Перевірте titles.json).';
-        // Виводимо системну кнопку закриття, якщо не вдалося завантажити
-        Telegram.WebApp.MainButton.setText("Закрити").show().onClick(Telegram.WebApp.close);
-      }
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Оновлення Статусу</title>
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <style>
+    /* Стилі для відповідності стандартному вигляду Telegram Mini App */
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+        Helvetica, Arial, sans-serif;
+      margin: 0;
+      padding: 15px;
+      background-color: var(--tg-theme-bg-color, #f4f4f5);
+      color: var(--tg-theme-text-color, #000000);
+      transition: background-color 0.3s, color 0.3s;
     }
 
-    loadTitles();
-
-    if (typeof Telegram !== 'undefined' && Telegram.WebApp.initData.length > 0) {
-      Telegram.WebApp.ready();
-      // Встановлюємо тему
-      document.body.style.backgroundColor = Telegram.WebApp.themeParams.bg_color;
-      Telegram.WebApp.MainButton.setText("ПІДТВЕРДИТИ").show().enable();
-
-      // Замінюємо кнопку HTML на MainButton Telegram
-      confirmBtn.style.display = 'none';
-      cancelBtn.style.display = 'none';
-
-      Telegram.WebApp.MainButton.onClick(() => {
-        const selectedTitle = titleSelect.value;
-        const selectedChapter = chapterNumberInput.value.trim();
-        const selectedRole = document.querySelector('input[name="role"]:checked')?.value;
-        const selectedDate = dateInput.value;
-
-        // 1. Валідація
-        if (!selectedTitle || !selectedChapter || !selectedRole || !selectedDate) {
-          Telegram.WebApp.showAlert('Будь ласка, заповніть всі поля.');
-          return;
-        }
-
-        if (isNaN(parseFloat(selectedChapter))) {
-          Telegram.WebApp.showAlert('Номер розділу має бути числом (наприклад, 1.0 або 15).');
-          return;
-        }
-
-        // 2. ФОРМУВАННЯ КОМАНДИ БОТА
-        // Формат: /updatestatus "Тайтл" <№ Розділу> <Роль> <Дата YYYY-MM-DD> <+>
-        const botCommand = `/updatestatus \"${selectedTitle}\" ${selectedChapter} ${selectedRole} ${selectedDate} +`;
-
-        // 3. ВІДПРАВКА ДАНИХ БОТУ
-        Telegram.WebApp.sendData(botCommand);
-
-        // 4. ЗАКРИТТЯ
-        Telegram.WebApp.close();
-      });
-
-      // Обробник для кнопки Скасування (додаткова кнопка, якщо є потреба)
-      Telegram.WebApp.onEvent('backButtonClicked', () => {
-        Telegram.WebApp.close();
-      });
-
-    } else {
-      console.error('Telegram WebApp environment not detected. Using local simulation.');
-      // Емуляція для локального тестування
-      confirmBtn.addEventListener('click', () => {
-        const title = titleSelect.value || 'TITLE';
-        const chapter = chapterNumberInput.value.trim() || '1.0';
-        const role = document.querySelector('input[name="role"]:checked')?.value || 'ROLE';
-        const date = dateInput.value || 'DATE';
-        const botCommand = `/updatestatus \"${title}\" ${chapter} ${role} ${date} +`;
-        alert(`Емуляція: Надсилається команда ${botCommand}`);
-      });
-      cancelBtn.addEventListener('click', () => alert('Скасовано (Емуляція)'));
+    /* Загальні стилі для полів та форм */
+    .form-group {
+      margin-bottom: 20px;
+      padding: 10px;
+      background-color: var(--tg-theme-secondary-bg-color, #ffffff);
+      border-radius: 10px;
     }
-  });
-</script>
-    </body>
-    
-    </html>
+
+    label {
+      display: block;
+      margin-bottom: 8px;
+      font-weight: 600;
+    }
+
+    input[type="text"],
+    input[type="date"],
+    select {
+      width: 100%;
+      padding: 10px;
+      margin-bottom: 10px;
+      border: 1px solid var(--tg-theme-link-color, #8e8e93);
+      border-radius: 5px;
+      box-sizing: border-box;
+      background-color: var(--tg-theme-bg-color, #ffffff);
+      color: var(--tg-theme-text-color, #000000);
+    }
+
+    .role-options {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+
+    .role-options label {
+      display: inline-block;
+      padding: 8px 15px;
+      border-radius: 20px;
+      border: 1px solid var(--tg-theme-secondary-bg-color, #d1d1d6);
+      background-color: var(--tg-theme-secondary-bg-color, #f0f0f0);
+      cursor: pointer;
+      transition: background-color 0.2s;
+      font-weight: normal;
+    }
+
+    .role-options input[type="radio"] {
+      display: none;
+    }
+
+    .role-options input[type="radio"]:checked+label {
+      background-color: var(--tg-theme-button-color, #007aff);
+      color: var(--tg-theme-button-text-color, #ffffff);
+      border-color: var(--tg-theme-button-color, #007aff);
+    }
+
+    /* Стилі для кнопок */
+    .actions {
+      display: flex;
+      justify-content: space-between;
+      margin-top: 20px;
+    }
+
+    .btn {
+      padding: 10px 20px;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 16px;
+      font-weight: 600;
+      flex-grow: 1;
+      margin: 0 5px;
+    }
+
+    .btn-confirm {
+      background-color: var(--tg-theme-button-color, #007aff);
+      color: var(--tg-theme-button-text-color, #ffffff);
+    }
+
+    .btn-cancel {
+      background-color: var(--tg-theme-secondary-bg-color, #e5e5ea);
+      color: var(--tg-theme-text-color, #000000);
+    }
+
+    .error-message {
+      color: red;
+      margin-top: -10px;
+      margin-bottom: 10px;
+      font-size: 14px;
+    }
+  </style>
+</head>
+
+<body>
+  <h1>Оновлення Статусу Глави</h1>
+
+  <form id="statusForm">
+    <div class="form-group">
+      <label for="titleSelect">Тайтл:</label>
+      <select id="titleSelect" name="title" required>
+        <option value="">Оберіть тайтл...</option>
+      </select>
+      <div id="titleError" class="error-message"></div>
+    </div>
+
+    <div class="form-group">
+      <label for="chapterNumberInput">Номер розділу (наприклад, 1.0 або 15):</label>
+      <input type="text" id="chapterNumberInput" name="chapter_number" placeholder="Введіть номер розділу" required />
+      <div id="chapterError" class="error-message"></div>
+    </div>
+
+    <div class="form-group">
+      <label>Роль:</label>
+      <div class="role-options">
+        <input type="radio" id="role_klink" name="role" value="клін" required />
+        <label for="role_klink">Клін</label>
+
+        <input type="radio" id="role_translate" name="role" value="переклад" required />
+        <label for="role_translate">Переклад</label>
+
+        <input type="radio" id="role_type" name="role" value="тайп" required />
+        <label for="role_type">Тайп</label>
+
+        <input type="radio" id="role_redact" name="role" value="ред" required />
+        <label for="role_redact">Редакт</label>
+      </div>
+      <div id="roleError" class="error-message"></div>
+    </div>
+
+    <div class="form-group">
+      <label for="dateInput">Дата завершення (YYYY-MM-DD):</label>
+      <input type="date" id="dateInput" name="completion_date" required />
+      <div id="dateError" class="error-message"></div>
+    </div>
+
+    <div class="actions">
+      <button type="button" class="btn btn-confirm" id="confirmBtn">
+        Підтвердити
+      </button>
+    </div>
+  </form>
+
+  <script>
+    document.addEventListener('DOMContentLoaded', () => {
+      const titleSelect = document.getElementById('titleSelect');
+      const chapterNumberInput = document.getElementById('chapterNumberInput');
+      const dateInput = document.getElementById('dateInput');
+      const confirmBtn = document.getElementById('confirmBtn');
+      // const cancelBtn = document.getElementById('cancelBtn'); // Використовуємо BackButton
+      const form = document.getElementById('statusForm');
+
+      // Встановлення поточної дати за замовчуванням
+      const today = new Date().toISOString().split('T')[0];
+      dateInput.value = today;
+
+      // Ініціалізація WebApp
+      if (window.Telegram && Telegram.WebApp) {
+        Telegram.WebApp.ready();
+        // Відображення основної кнопки
+        Telegram.WebApp.MainButton.setText('Підтвердити Оновлення');
+        Telegram.WebApp.MainButton.show();
+        Telegram.WebApp.enableClosingConfirmation();
+
+        // Додавання доступних тайтлів (Емуляція, поки немає API-ендпоінту)
+        const titles = ["ВВ", "Кіт", "Семпай", "Інший Тайтл"]; // Приклад
+        titles.forEach(title => {
+          const option = document.createElement('option');
+          option.value = title;
+          option.textContent = title;
+          titleSelect.appendChild(option);
+        });
+
+        // Обробник для MainButton
+        Telegram.WebApp.onEvent('mainButtonClicked', () => {
+          // Очищення попередніх помилок
+          document.querySelectorAll('.error-message').forEach(el => el.textContent = '');
+
+          const selectedTitle = titleSelect.value;
+          const selectedChapter = chapterNumberInput.value.trim();
+          const selectedRole = document.querySelector('input[name="role"]:checked')?.value;
+          const selectedDate = dateInput.value;
+
+          let isValid = true;
+
+          if (!selectedTitle) {
+            document.getElementById('titleError').textContent = 'Оберіть тайтл.';
+            isValid = false;
+          }
+
+          if (!selectedRole) {
+            document.getElementById('roleError').textContent = 'Оберіть роль.';
+            isValid = false;
+          }
+
+          if (!selectedDate || !/^\d{4}-\d{2}-\d{2}$/.test(selectedDate)) {
+            document.getElementById('dateError').textContent = 'Введіть коректну дату (YYYY-MM-DD).';
+            isValid = false;
+          }
+
+          // Перевірка розділу: має бути число
+          if (!selectedChapter || isNaN(parseFloat(selectedChapter))) {
+            document.getElementById('chapterError').textContent = 'Номер розділу має бути числом (наприклад, 1.0 або 15).';
+            isValid = false;
+          }
+
+          if (!isValid) {
+            Telegram.WebApp.showAlert('Будь ласка, заповніть усі обов\'язкові поля коректно.');
+            return;
+          }
+
+          // =============================================================
+          // 🚀 ЗМІНА: ФОРМУВАННЯ JSON-ОБ'ЄКТА ЗАМІСТЬ КОМАНДИ
+          // =============================================================
+
+          const dataObject = {
+            action: 'update_status', // Додаємо поле 'action' для гнучкості бота
+            title: selectedTitle,
+            chapter: selectedChapter,
+            role: selectedRole,
+            date: selectedDate,
+            status: '+' // Символ статусу
+          };
+
+          // 2. ВІДПРАВКА ДАНИХ БОТУ (JSON-рядок)
+          Telegram.WebApp.sendData(JSON.stringify(dataObject));
+
+          // 3. ЗАКРИТТЯ
+          Telegram.WebApp.close();
+        });
+
+        // Обробник для кнопки Скасування (додаткова кнопка, якщо є потреба)
+        Telegram.WebApp.onEvent('backButtonClicked', () => {
+          Telegram.WebApp.close();
+        });
+
+      } else {
+        console.error('Telegram WebApp environment not detected. Using local simulation.');
+        // Емуляція для локального тестування
+        confirmBtn.addEventListener('click', () => {
+          const title = titleSelect.value || 'TITLE';
+          const chapter = chapterNumberInput.value.trim() || '1.0';
+          const role = document.querySelector('input[name="role"]:checked')?.value || 'ROLE';
+          const date = dateInput.value || 'DATE';
+
+          // Емуляція JSON-відправлення
+          const dataObject = {
+            action: 'update_status',
+            title: title,
+            chapter: chapter,
+            role: role,
+            date: date,
+            status: '+'
+          };
+
+          alert(`Емуляція: Надсилається JSON: ${JSON.stringify(dataObject)}`);
+        });
+        // cancelBtn.addEventListener('click', () => alert('Скасовано (Емуляція)'));
+      }
+    });
+  </script>
+</body>
+
+</html>
