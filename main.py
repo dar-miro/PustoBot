@@ -610,7 +610,7 @@ async def register(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     nickname = " ".join(context.args)
     # ВИПРАВЛЕННЯ: Використовуємо sheets з контексту
-    sheets = context.application.bot_data['sheets_helper']
+    sheets = context.bot_data['sheets_helper']
     telegram_tag = f"@{user.username}" if user.username else user.full_name
     response = sheets.register_user(user.id, telegram_tag, nickname)
     await update.message.reply_text(response)
