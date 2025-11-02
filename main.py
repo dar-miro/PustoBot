@@ -11,6 +11,7 @@ import gspread.utils
 from telegram import Update, WebAppInfo, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes, MessageHandler, filters
 from typing import List, Tuple
+from yarl import URL
 
 # Конфігурація
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
@@ -314,7 +315,7 @@ async def run_bot():
     logger.info("SheetsHelper збережено в Application.bot_data.")
 
     # 4. Налаштування webhook
-    parsed_url = web.URL(WEBHOOK_URL)
+    parsed_url = URL(WEBHOOK_URL)
     webhook_path = parsed_url.path
     full_webhook_url = str(parsed_url.with_path(webhook_path))
     
