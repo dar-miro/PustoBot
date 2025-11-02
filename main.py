@@ -186,7 +186,7 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     """Обробляє команду /start."""
     user = update.effective_user
     
-    sheets_helper = context.application.data.get('sheets_helper')
+    sheets_helper = context.application.bot_data.get('sheets_helper')
     nickname = sheets_helper.get_nickname_by_id(user.id) if sheets_helper else None
     
     if not nickname:
@@ -267,7 +267,7 @@ async def update_status_command(update: Update, context: ContextTypes.DEFAULT_TY
     title, chapter, role_key, date, status = args
 
     user = update.effective_user
-    sheets_helper = context.application.data.get('sheets_helper')
+    sheets_helper = context.application.bot_data.get('sheets_helper')
 
     if not sheets_helper:
         await update.effective_message.reply_text("❌ Помилка: Сервіс Google Sheets недоступний.")
@@ -310,10 +310,10 @@ async def run_bot():
     bot_app = ApplicationBuilder().token(TELEGRAM_BOT_TOKEN).build()
     
     # 3. ЗБЕРЕЖЕННЯ ДАНИХ 
-    bot_app.data['sheets_helper'] = sheets_helper 
-    logger.info("SheetsHelper збережено в Application.data.")
-    
-    # 3. Налаштування webhook
+    bot_app.bot_data['sheets_helper'] = sheets_helper
+    logger.info("SheetsHelper збережено в Application.bot_data.")
+
+    # 4. Налаштування webhook
     parsed_url = web.URL(WEBHOOK_URL)
     webhook_path = parsed_url.path
     full_webhook_url = str(parsed_url.with_path(webhook_path))
