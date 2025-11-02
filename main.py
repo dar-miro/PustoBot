@@ -309,8 +309,9 @@ async def run_bot():
     # 2. Створення застосунку Telegram
     bot_app = ApplicationBuilder().token(TELEGRAM_BOT_TOKEN).build()
     
-    # Пряме присвоєння до .data
+    # 3. ЗБЕРЕЖЕННЯ ДАНИХ 
     bot_app.data['sheets_helper'] = sheets_helper 
+    logger.info("SheetsHelper збережено в Application.data.")
     
     # 3. Налаштування webhook
     parsed_url = web.URL(WEBHOOK_URL)
@@ -334,7 +335,7 @@ async def run_bot():
 
     # 5. Налаштування маршрутів aiohttp
     aio_app = web.Application()
-    aio_app['bot_app'] = bot_app 
+    aio_app['bot_app'] = bot_app
     aio_app.add_routes([
         web.get('/health', lambda r: web.Response(text='OK')), 
         web.post(webhook_path, webhook_handler), 
